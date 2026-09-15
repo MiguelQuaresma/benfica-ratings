@@ -26,6 +26,38 @@ interface Stat {
   total_votes: number;
 }
 
+function PlayerAvatar({ src, name }: { src: string; name: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  // Iniciais do jogador (ex: "Tomás Araújo" -> "TA")
+  const initials = name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(n => n[0])
+    .join('')
+    .toUpperCase();
+
+  if (hasError || !src) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-red-500 font-black text-xs select-none">
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={() => setHasError(true)}
+      className="w-full h-full object-cover object-top"
+    />
+  );
+}
+
 export default function Home() {
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
@@ -229,13 +261,7 @@ export default function Home() {
                     >
                       <div className="p-3.5 flex items-center gap-3">
                         <div className="relative w-14 h-14 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
-                          <img 
-                            src={p.photo_url} 
-                            alt={p.name} 
-                            className="w-full h-full object-cover object-top"
-                            loading="lazy"
-                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.fotmob.com/image_resources/playerimages/placeholder.png'; }}
-                          />
+                          <PlayerAvatar src={p.photo_url} name={p.name} />
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -293,7 +319,7 @@ export default function Home() {
                       ★ Homem do Jogo
                     </span>
                     <div className="w-20 h-20 mx-auto mt-3 rounded-full overflow-hidden border-2 border-red-500 shadow-lg bg-zinc-800">
-                      <img src={motm.photo_url} alt={motm.player_name} className="w-full h-full object-cover object-top" />
+                      <PlayerAvatar src={motm.photo_url} name={motm.player_name} />
                     </div>
                     <h3 className="text-xl font-black mt-2 text-white">{motm.player_name}</h3>
                     <p className="text-4xl font-black text-red-500 mt-1">{motm.avg_score}</p>
@@ -306,7 +332,7 @@ export default function Home() {
                     <div key={s.player_id} className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 flex-shrink-0">
-                          <img src={s.photo_url} alt={s.player_name} className="w-full h-full object-cover object-top" />
+                          <PlayerAvatar src={s.photo_url} name={s.player_name} />
                         </div>
                         <div>
                           <p className="font-bold text-sm text-white">{s.player_name}</p>
