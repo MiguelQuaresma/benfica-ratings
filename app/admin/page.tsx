@@ -2,9 +2,16 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+interface Player {
+  id: string;
+  name: string;
+  position: string;
+  photo_url: string;
+}
+
 export default function AdminPage() {
-  const [players, setPlayers] = useState([]);
-  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [opponent, setOpponent] = useState('');
   const [competition, setCompetition] = useState('Liga Portugal');
   const [loading, setLoading] = useState(false);
@@ -13,17 +20,20 @@ export default function AdminPage() {
   useEffect(() => {
     supabase.from('players').select('*').order('name').then(({ data }) => {
       if (data) {
-        // Pré-seleciona Marco Silva por defeito
-        const coach = data.find(p => p.position === 'TREINADOR');
+        const coach = (data as Player[]).find(p => p.position === 'TREINADOR');
         if (coach) setSelectedIds(new Set([coach.id]));
-        setPlayers(data);
+        setPlayers(data as Player[]);
       }
     });
   }, []);
 
-  const togglePlayer = (id) => {
+  const togglePlayer = (id: string) => {
     const next = new Set(selectedIds);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
     setSelectedIds(next);
   };
 
@@ -51,8 +61,8 @@ export default function AdminPage() {
       .select()
       .single();
 
-    if (matchErr) {
-      setStatus('Erro: ' + matchErr.message);
+    if (matchErr || !match) {
+      setStatus('Erro: ' + (matchErr?.message || 'Falha ao criar jogo'));
       setLoading(false);
       return;
     }
@@ -87,7 +97,6 @@ export default function AdminPage() {
         </span>
       </div>
 
-      {/* Formulário do Jogo */}
       <div className="space-y-3 bg-zinc-900/90 border border-zinc-800 p-4 rounded-xl mb-5">
         <div>
           <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Adversário</label>
@@ -115,7 +124,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Grelha Rápida de Jogadores */}
       <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Plantel Disponível:</p>
       <div className="grid grid-cols-2 gap-2 mb-6 max-h-[460px] overflow-y-auto pr-1">
         {players.map((p) => {
@@ -139,7 +147,7 @@ export default function AdminPage() {
                 src={p.photo_url}
                 alt={p.name}
                 className="w-8 h-8 rounded-full bg-zinc-800 object-cover object-top flex-shrink-0"
-                onError={(e) => { e.currentTarget.src = 'https://images.fotmob.com/image_resources/playerimages/placeholder.png'; }}
+                onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.fotmob.com/image_resources/playerimages/placeholder.png'; }}
               />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold truncate text-white">{p.name}</p>
@@ -152,7 +160,6 @@ export default function AdminPage() {
         })}
       </div>
 
-      {/* Botão de Disparo */}
       <button
         onClick={handleCreateMatch}
         disabled={loading}
