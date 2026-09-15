@@ -9,6 +9,39 @@ interface Player {
   photo_url: string;
 }
 
+function AdminPlayerAvatar({ src, name }: { src: string; name: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  const initials = name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase();
+
+  if (hasError || !src) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-[10px] font-black text-red-500 flex-shrink-0 select-none">
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700/60 overflow-hidden flex-shrink-0">
+      <img
+        src={src}
+        alt={name}
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        onError={() => setHasError(true)}
+        className="w-full h-full object-cover object-top"
+      />
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -18,13 +51,17 @@ export default function AdminPage() {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
-    supabase.from('players').select('*').order('name').then(({ data }) => {
-      if (data) {
-        const coach = (data as Player[]).find(p => p.position === 'TREINADOR');
-        if (coach) setSelectedIds(new Set([coach.id]));
-        setPlayers(data as Player[]);
-      }
-    });
+    supabase
+      .from('players')
+      .select('*')
+      .order('name')
+      .then(({ data }) => {
+        if (data) {
+          const coach = (data as Player[]).find((p) => p.position === 'TREINADOR');
+          if (coach) setSelectedIds(new Set([coach.id]));
+          setPlayers(data as Player[]);
+        }
+      });
   }, []);
 
   const togglePlayer = (id: string) => {
@@ -47,7 +84,10 @@ export default function AdminPage() {
     setStatus('A publicar encontro...');
 
     // 1. Desativa jogos abertos anteriormente
-    await supabase.from('matches').update({ is_open_for_voting: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase
+      .from('matches')
+      .update({ is_open_for_voting: false })
+      .neq('id', '00000000-0000-0000-0000-000000000000');
 
     // 2. Cria o novo encontro aberto para votos
     const { data: match, error: matchErr } = await supabase
@@ -56,7 +96,7 @@ export default function AdminPage() {
         opponent: opponent.trim(),
         competition: competition.trim(),
         date: new Date().toISOString(),
-        is_open_for_voting: true
+        is_open_for_voting: true,
       })
       .select()
       .single();
@@ -67,11 +107,11 @@ export default function AdminPage() {
       return;
     }
 
-    // 3. Associa apenas os selecionados à ficha de jogo
-    const lineups = Array.from(selectedIds).map(id => ({
+    // 3. Associa apenas os jogadores selecionados
+    const lineups = Array.from(selectedIds).map((id) => ({
       match_id: match.id,
       player_id: id,
-      is_starter: true
+      is_starter: true,
     }));
 
     const { error: lineErr } = await supabase.from('match_lineups').insert(lineups);
@@ -99,7 +139,9 @@ export default function AdminPage() {
 
       <div className="space-y-3 bg-zinc-900/90 border border-zinc-800 p-4 rounded-xl mb-5">
         <div>
-          <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Adversário</label>
+          <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+            Adversário
+          </label>
           <input
             type="text"
             placeholder="ex: FC Porto, Sporting CP, Real Madrid..."
@@ -109,7 +151,9 @@ export default function AdminPage() {
           />
         </div>
         <div>
-          <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Competição</label>
+          <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+            Competição
+          </label>
           <select
             value={competition}
             onChange={(e) => setCompetition(e.target.value)}
@@ -124,7 +168,9 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Plantel Disponível:</p>
+      <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
+        Plantel Disponível:
+      </p>
       <div className="grid grid-cols-2 gap-2 mb-6 max-h-[460px] overflow-y-auto pr-1">
         {players.map((p) => {
           const checked = selectedIds.has(p.id);
@@ -143,12 +189,7 @@ export default function AdminPage() {
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400'
               }`}
             >
-              <img
-                src={p.photo_url}
-                alt={p.name}
-                className="w-8 h-8 rounded-full bg-zinc-800 object-cover object-top flex-shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.fotmob.com/image_resources/playerimages/placeholder.png'; }}
-              />
+              <AdminPlayerAvatar src={p.photo_url} name={p.name} />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold truncate text-white">{p.name}</p>
                 <span className={`text-[9px] font-semibold ${checked ? 'text-zinc-200' : 'text-zinc-500'}`}>
@@ -163,13 +204,17 @@ export default function AdminPage() {
       <button
         onClick={handleCreateMatch}
         disabled={loading}
-        className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-4 rounded-xl text-sm uppercase tracking-wider shadow-lg transition-transform active:scale-98"
+        className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-4 rounded-xl text-sm uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
       >
         {loading ? 'A processar...' : 'Abrir Votações Agora'}
       </button>
 
       {status && (
-        <p className={`text-center text-xs mt-3 font-bold ${status.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
+        <p
+          className={`text-center text-xs mt-3 font-bold ${
+            status.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'
+          }`}
+        >
           {status}
         </p>
       )}
