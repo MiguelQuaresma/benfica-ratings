@@ -2,13 +2,37 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+interface Match {
+  id: string;
+  opponent: string;
+  competition: string;
+  date: string;
+  is_open_for_voting: boolean;
+}
+
+interface Player {
+  id: string;
+  name: string;
+  position: string;
+  photo_url: string;
+}
+
+interface Stat {
+  player_id: string;
+  player_name: string;
+  position: string;
+  photo_url: string;
+  avg_score: number;
+  total_votes: number;
+}
+
 export default function Home() {
-  const [activeMatch, setActiveMatch] = useState(null);
-  const [upcomingMatch, setUpcomingMatch] = useState(null);
-  const [players, setPlayers] = useState([]);
-  const [stats, setStats] = useState([]);
-  const [ratings, setRatings] = useState({});
-  const [view, setView] = useState('vote');
+  const [activeMatch, setActiveMatch] = useState<Match | null>(null);
+  const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [stats, setStats] = useState<Stat[]>([]);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [view, setView] = useState<'vote' | 'results'>('vote');
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
 
@@ -22,21 +46,26 @@ export default function Home() {
         .maybeSingle();
 
       if (current) {
-        setActiveMatch(current);
+        const matchData = current as Match;
+        setActiveMatch(matchData);
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
-          .eq('match_id', current.id);
+          .eq('match_id', matchData.id);
+
         if (lineups) {
-          // Ordena colocando jogadores primeiro e o treinador no fim
-          const sorted = lineups.map(l => l.players).sort((a, b) => {
+          const rawPlayers = lineups
+            .map((l: any) => l.players)
+            .filter(Boolean) as Player[];
+
+          const sorted = rawPlayers.sort((a, b) => {
             if (a.position === 'TREINADOR') return 1;
             if (b.position === 'TREINADOR') return -1;
             return 0;
           });
           setPlayers(sorted);
         }
-        loadStats(current.id);
+        loadStats(matchData.id);
       } else {
         const { data: next } = await supabase
           .from('matches')
@@ -45,7 +74,7 @@ export default function Home() {
           .order('date', { ascending: true })
           .limit(1)
           .maybeSingle();
-        if (next) setUpcomingMatch(next);
+        if (next) setUpcomingMatch(next as Match);
       }
     }
     loadData();
@@ -69,20 +98,21 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [upcomingMatch]);
 
-  async function loadStats(matchId) {
+  async function loadStats(matchId: string) {
     const { data } = await supabase
       .from('match_player_stats')
       .select('*')
       .eq('match_id', matchId)
       .order('avg_score', { ascending: false });
-    if (data) setStats(data);
+    if (data) setStats(data as Stat[]);
   }
 
-  const handleScore = (id, score) => {
+  const handleScore = (id: string, score: number) => {
     setRatings(prev => ({ ...prev, [id]: score }));
   };
 
   const handleSubmit = async () => {
+    if (!activeMatch) return;
     const playerIds = Object.keys(ratings);
     if (playerIds.length === 0) return alert('Atribui pelo menos uma nota.');
 
@@ -114,7 +144,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#0d0d0e] text-zinc-100 font-sans pb-24 selection:bg-red-600 selection:text-white">
-      {/* Top Bar */}
       <div className="border-b border-zinc-800 bg-[#121214]/90 backdrop-blur sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -132,7 +161,6 @@ export default function Home() {
       </div>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Banner de Próximo Jogo com Timer se não houver jogo ativo */}
         {!activeMatch && (
           <div className="mt-4 p-6 rounded-2xl bg-gradient-to-b from-zinc-900 to-[#151518] border border-zinc-800 text-center shadow-xl">
             <span className="text-[11px] font-black tracking-widest text-red-500 uppercase">Próximo Jogo</span>
@@ -160,7 +188,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Ecrã de Jogo Ativo */}
         {activeMatch && (
           <>
             <div className="mb-4 text-center">
@@ -168,7 +195,6 @@ export default function Home() {
               <h2 className="text-xl font-black tracking-tight text-white">SL Benfica vs {activeMatch.opponent}</h2>
             </div>
 
-            {/* Alternador Vote / Results */}
             <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 mb-5">
               <button
                 onClick={() => setView('vote')}
@@ -188,7 +214,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* VISTA: Votação com Estilo Vote11 */}
             {view === 'vote' && (
               <div className="space-y-3.5">
                 {players.map((p) => {
@@ -203,18 +228,16 @@ export default function Home() {
                       }`}
                     >
                       <div className="p-3.5 flex items-center gap-3">
-                        {/* Foto do Jogador */}
                         <div className="relative w-14 h-14 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
                           <img 
                             src={p.photo_url} 
                             alt={p.name} 
                             className="w-full h-full object-cover object-top"
                             loading="lazy"
-                            onError={(e) => { e.currentTarget.src = 'https://images.fotmob.com/image_resources/playerimages/placeholder.png'; }}
+                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.fotmob.com/image_resources/playerimages/placeholder.png'; }}
                           />
                         </div>
 
-                        {/* Nome e Posição */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider ${
@@ -226,7 +249,6 @@ export default function Home() {
                           <h3 className="font-extrabold text-sm text-white truncate mt-0.5 tracking-tight">{p.name}</h3>
                         </div>
 
-                        {/* Nota Selecionada Atual */}
                         <div className="w-10 h-10 rounded-xl bg-black/50 border border-zinc-800 flex items-center justify-center flex-shrink-0">
                           <span className={`text-base font-black ${currentScore ? 'text-red-500' : 'text-zinc-600'}`}>
                             {currentScore || '-'}
@@ -234,7 +256,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Grelha de Seleção 1 a 10 */}
                       <div className="px-3 pb-3 pt-1 border-t border-zinc-800/40 grid grid-cols-10 gap-1">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                           <button
@@ -264,7 +285,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* VISTA: Resultados e Médias da Malta */}
             {view === 'results' && (
               <div className="space-y-3">
                 {motm && Number(motm.avg_score) > 0 && (
