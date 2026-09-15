@@ -26,15 +26,22 @@ interface Stat {
   total_votes: number;
 }
 
+const POSITION_ORDER: Record<string, number> = {
+  'GR': 1,
+  'DEF': 2,
+  'MED': 3,
+  'AVA': 4,
+  'TREINADOR': 5,
+};
+
 function PlayerAvatar({ src, name }: { src: string; name: string }) {
   const [hasError, setHasError] = useState(false);
 
-  // Iniciais do jogador (ex: "Tomás Araújo" -> "TA")
   const initials = name
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
-    .map(n => n[0])
+    .map((n) => n[0])
     .join('')
     .toUpperCase();
 
@@ -91,9 +98,10 @@ export default function Home() {
             .filter(Boolean) as Player[];
 
           const sorted = rawPlayers.sort((a, b) => {
-            if (a.position === 'TREINADOR') return 1;
-            if (b.position === 'TREINADOR') return -1;
-            return 0;
+            const orderA = POSITION_ORDER[a.position] || 99;
+            const orderB = POSITION_ORDER[b.position] || 99;
+            if (orderA !== orderB) return orderA - orderB;
+            return a.name.localeCompare(b.name);
           });
           setPlayers(sorted);
         }
@@ -123,7 +131,7 @@ export default function Home() {
           d: Math.floor(diff / (1000 * 60 * 60 * 24)),
           h: Math.floor((diff / (1000 * 60 * 60)) % 24),
           m: Math.floor((diff / 1000 / 60) % 60),
-          s: Math.floor((diff / 1000) % 60)
+          s: Math.floor((diff / 1000) % 60),
         });
       }
     }, 1000);
@@ -140,7 +148,7 @@ export default function Home() {
   }
 
   const handleScore = (id: string, score: number) => {
-    setRatings(prev => ({ ...prev, [id]: score }));
+    setRatings((prev) => ({ ...prev, [id]: score }));
   };
 
   const handleSubmit = async () => {
@@ -155,11 +163,11 @@ export default function Home() {
       localStorage.setItem('voter_token', voterId);
     }
 
-    const payload = playerIds.map(id => ({
+    const payload = playerIds.map((id) => ({
       match_id: activeMatch.id,
       player_id: id,
       user_id: voterId,
-      score: ratings[id]
+      score: ratings[id],
     }));
 
     const { error } = await supabase.from('ratings').insert(payload);
@@ -172,7 +180,7 @@ export default function Home() {
     setView('results');
   };
 
-  const motm = stats.find(s => s.position !== 'TREINADOR');
+  const motm = stats.find((s) => s.position !== 'TREINADOR');
 
   return (
     <main className="min-h-screen bg-[#0d0d0e] text-zinc-100 font-sans pb-24 selection:bg-red-600 selection:text-white">
@@ -195,7 +203,9 @@ export default function Home() {
       <div className="max-w-md mx-auto px-4 pt-4">
         {!activeMatch && (
           <div className="mt-4 p-6 rounded-2xl bg-gradient-to-b from-zinc-900 to-[#151518] border border-zinc-800 text-center shadow-xl">
-            <span className="text-[11px] font-black tracking-widest text-red-500 uppercase">Próximo Jogo</span>
+            <span className="text-[11px] font-black tracking-widest text-red-500 uppercase">
+              Próximo Jogo
+            </span>
             <h2 className="text-2xl font-black mt-1 text-white tracking-tight">
               {upcomingMatch ? `vs ${upcomingMatch.opponent}` : 'A carregar calendário...'}
             </h2>
@@ -207,7 +217,7 @@ export default function Home() {
                   { label: 'DIAS', val: timeLeft.d },
                   { label: 'HORAS', val: timeLeft.h },
                   { label: 'MIN', val: timeLeft.m },
-                  { label: 'SEG', val: timeLeft.s }
+                  { label: 'SEG', val: timeLeft.s },
                 ].map((t, idx) => (
                   <div key={idx} className="bg-zinc-800/60 p-2.5 rounded-xl border border-zinc-700/50">
                     <span className="block text-2xl font-black text-red-500">{t.val}</span>
@@ -216,15 +226,21 @@ export default function Home() {
                 ))}
               </div>
             )}
-            <p className="text-[11px] text-zinc-500 mt-5">A votação fica disponível logo após o apito final.</p>
+            <p className="text-[11px] text-zinc-500 mt-5">
+              A votação fica disponível logo após o apito final.
+            </p>
           </div>
         )}
 
         {activeMatch && (
           <>
             <div className="mb-4 text-center">
-              <span className="text-[11px] text-zinc-400 uppercase tracking-widest font-semibold">{activeMatch.competition}</span>
-              <h2 className="text-xl font-black tracking-tight text-white">SL Benfica vs {activeMatch.opponent}</h2>
+              <span className="text-[11px] text-zinc-400 uppercase tracking-widest font-semibold">
+                {activeMatch.competition}
+              </span>
+              <h2 className="text-xl font-black tracking-tight text-white">
+                SL Benfica vs {activeMatch.opponent}
+              </h2>
             </div>
 
             <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 mb-5">
@@ -237,7 +253,10 @@ export default function Home() {
                 Avaliar ({Object.keys(ratings).length}/{players.length})
               </button>
               <button
-                onClick={() => { loadStats(activeMatch.id); setView('results'); }}
+                onClick={() => {
+                  loadStats(activeMatch.id);
+                  setView('results');
+                }}
                 className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
                   view === 'results' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
                 }`}
@@ -253,10 +272,12 @@ export default function Home() {
                   const isCoach = p.position === 'TREINADOR';
 
                   return (
-                    <div 
-                      key={p.id} 
+                    <div
+                      key={p.id}
                       className={`relative overflow-hidden rounded-2xl border transition-all ${
-                        currentScore ? 'border-red-600/70 bg-gradient-to-r from-zinc-900 via-zinc-900 to-red-950/30' : 'border-zinc-800/80 bg-zinc-900/70'
+                        currentScore
+                          ? 'border-red-600/70 bg-gradient-to-r from-zinc-900 via-zinc-900 to-red-950/30'
+                          : 'border-zinc-800/80 bg-zinc-900/70'
                       }`}
                     >
                       <div className="p-3.5 flex items-center gap-3">
@@ -266,17 +287,27 @@ export default function Home() {
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider ${
-                              isCoach ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                            }`}>
+                            <span
+                              className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider ${
+                                isCoach
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              }`}
+                            >
                               {p.position}
                             </span>
                           </div>
-                          <h3 className="font-extrabold text-sm text-white truncate mt-0.5 tracking-tight">{p.name}</h3>
+                          <h3 className="font-extrabold text-sm text-white truncate mt-0.5 tracking-tight">
+                            {p.name}
+                          </h3>
                         </div>
 
                         <div className="w-10 h-10 rounded-xl bg-black/50 border border-zinc-800 flex items-center justify-center flex-shrink-0">
-                          <span className={`text-base font-black ${currentScore ? 'text-red-500' : 'text-zinc-600'}`}>
+                          <span
+                            className={`text-base font-black ${
+                              currentScore ? 'text-red-500' : 'text-zinc-600'
+                            }`}
+                          >
                             {currentScore || '-'}
                           </span>
                         </div>
@@ -288,8 +319,8 @@ export default function Home() {
                             key={num}
                             onClick={() => handleScore(p.id, num)}
                             className={`py-1.5 rounded-md text-xs font-black transition-transform active:scale-95 ${
-                              currentScore === num 
-                                ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]' 
+                              currentScore === num
+                                ? 'bg-red-600 text-white shadow-[0_0_8px_#dc2626]'
                                 : 'bg-zinc-800/70 text-zinc-300 hover:bg-zinc-700'
                             }`}
                           >
@@ -329,14 +360,19 @@ export default function Home() {
 
                 <div className="space-y-2">
                   {stats.map((s) => (
-                    <div key={s.player_id} className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl flex items-center justify-between">
+                    <div
+                      key={s.player_id}
+                      className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl flex items-center justify-between"
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 flex-shrink-0">
                           <PlayerAvatar src={s.photo_url} name={s.player_name} />
                         </div>
                         <div>
                           <p className="font-bold text-sm text-white">{s.player_name}</p>
-                          <span className="text-[10px] text-zinc-400 font-semibold">{s.position} • {s.total_votes} votos</span>
+                          <span className="text-[10px] text-zinc-400 font-semibold">
+                            {s.position} • {s.total_votes} votos
+                          </span>
                         </div>
                       </div>
                       <div className="text-right">
