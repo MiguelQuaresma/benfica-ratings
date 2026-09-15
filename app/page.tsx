@@ -3,42 +3,66 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function Home() {
-  const [match, setMatch] = useState(null);
+  const [activeMatch, setActiveMatch] = useState(null);
+  const [upcomingMatch, setUpcomingMatch] = useState(null);
   const [players, setPlayers] = useState([]);
   const [stats, setStats] = useState([]);
   const [ratings, setRatings] = useState({});
-  const [view, setView] = useState('vote'); // 'vote' ou 'results'
-  const [status, setStatus] = useState({ loading: false, msg: '' });
+  const [view, setView] = useState('vote');
+  const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
 
   useEffect(() => {
-    loadActiveMatch();
+    async function loadData() {
+      // 1. Procura jogo aberto para votar
+      const { data: current } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('is_open_for_voting', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (current) {
+        setActiveMatch(current);
+        const { data: lineups } = await supabase
+          .from('match_lineups')
+          .select('player_id, is_starter, players(*)')
+          .eq('match_id', current.id);
+        if (lineups) setPlayers(lineups.map(l => l.players));
+        loadStats(current.id);
+      } else {
+        // 2. Se não houver votação, procura o próximo jogo
+        const { data: next } = await supabase
+          .from('matches')
+          .select('*')
+          .gte('date', new Date().toISOString())
+          .order('date', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (next) setUpcomingMatch(next);
+      }
+    }
+    loadData();
   }, []);
 
-  async function loadActiveMatch() {
-    // 1. Procurar o jogo ativo
-    const { data: currentMatch } = await supabase
-      .from('matches')
-      .select('*')
-      .eq('is_open_for_voting', true)
-      .limit(1)
-      .single();
-
-    if (!currentMatch) return;
-    setMatch(currentMatch);
-
-    // 2. Procurar APENAS os jogadores que participaram neste jogo
-    const { data: lineups } = await supabase
-      .from('match_lineups')
-      .select('player_id, is_starter, players(*)')
-      .eq('match_id', currentMatch.id);
-
-    if (lineups) {
-      setPlayers(lineups.map(l => ({ ...l.players, is_starter: l.is_starter })));
-    }
-
-    // 3. Carregar as médias atuais da comunidade
-    loadStats(currentMatch.id);
-  }
+  // Timer decrescente
+  useEffect(() => {
+    if (!upcomingMatch?.date) return;
+    const interval = setInterval(() => {
+      const diff = new Date(upcomingMatch.date).getTime() - new Date().getTime();
+      if (diff <= 0) {
+        clearInterval(interval);
+      } else {
+        setTimeLeft({
+          d: Math.floor(diff / (1000 * 60 * 60 * 24)),
+          h: Math.floor((diff / (1000 * 60 * 60)) % 24),
+          m: Math.floor((diff / 1000 / 60) % 60),
+          s: Math.floor((diff / 1000) % 60)
+        });
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [upcomingMatch]);
 
   async function loadStats(matchId) {
     const { data } = await supabase
@@ -46,150 +70,130 @@ export default function Home() {
       .select('*')
       .eq('match_id', matchId)
       .order('avg_score', { ascending: false });
-
     if (data) setStats(data);
   }
 
-  const handleScore = (id, score) => {
-    setRatings(prev => ({ ...prev, [id]: score }));
-  };
-
   const handleSubmit = async () => {
     const playerIds = Object.keys(ratings);
-    if (playerIds.length === 0) {
-      alert('Seleciona a nota de pelo menos um jogador.');
-      return;
-    }
-
-    setStatus({ loading: true, msg: '' });
+    if (playerIds.length === 0) return alert('Atribui pelo menos uma nota.');
 
     let voterId = localStorage.getItem('voter_token');
     if (!voterId) {
-      voterId = 'anon_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+      voterId = 'anon_' + Math.random().toString(36).substring(2);
       localStorage.setItem('voter_token', voterId);
     }
 
     const payload = playerIds.map(id => ({
-      match_id: match.id,
+      match_id: activeMatch.id,
       player_id: id,
       user_id: voterId,
       score: ratings[id]
     }));
 
-    const { error } = await supabase.from('ratings').insert(payload);
-
-    if (error) {
-      setStatus({ 
-        loading: false, 
-        msg: error.message.includes('unique') ? 'Já enviaste as tuas notas para este jogo!' : 'Erro ao guardar votos.' 
-      });
-      setView('results');
-    } else {
-      await loadStats(match.id);
-      setStatus({ loading: false, msg: 'Notas registadas com sucesso!' });
-      setView('results');
-    }
+    await supabase.from('ratings').insert(payload);
+    await loadStats(activeMatch.id);
+    setView('results');
   };
 
-  const motm = stats.length > 0 ? stats[0] : null;
-
   return (
-    <main className="min-h-screen bg-neutral-950 text-white p-4 max-w-md mx-auto font-sans pb-12">
-      {/* Cabeçalho do Jogo */}
+    <main className="min-h-screen bg-black text-white p-4 max-w-md mx-auto font-sans pb-12">
       <header className="mb-6 text-center">
         <h1 className="text-2xl font-black text-red-600 tracking-wider">BENFICA RATINGS</h1>
-        {match ? (
-          <p className="text-sm text-neutral-400 mt-1">vs <span className="text-white font-bold">{match.opponent}</span> ({match.competition})</p>
-        ) : (
-          <p className="text-xs text-neutral-500 mt-1">Sem jogos abertos para votação</p>
-        )}
       </header>
 
-      {/* Alternador de Abas */}
-      <div className="flex bg-neutral-900 p-1 rounded-xl mb-6 border border-neutral-800">
-        <button
-          onClick={() => setView('vote')}
-          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${view === 'vote' ? 'bg-red-600 text-white' : 'text-neutral-400'}`}
-        >
-          Minha Avaliação
-        </button>
-        <button
-          onClick={() => { loadStats(match?.id); setView('results'); }}
-          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${view === 'results' ? 'bg-red-600 text-white' : 'text-neutral-400'}`}
-        >
-          Médias da Malta
-        </button>
-      </div>
+      {/* Se NÃO há votação aberta: Cartão de Próximo Jogo com Contagem */}
+      {!activeMatch && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center mt-6">
+          <p className="text-xs uppercase font-extrabold text-red-500 tracking-widest mb-1">Próximo Jogo</p>
+          <h2 className="text-2xl font-black text-white">{upcomingMatch ? `vs ${upcomingMatch.opponent}` : 'A carregar calendário...'}</h2>
+          <p className="text-zinc-400 text-xs mt-1">{upcomingMatch?.competition || 'SL Benfica'}</p>
 
-      {status.msg && (
-        <div className="p-3 mb-4 text-xs font-semibold rounded-lg bg-neutral-800 border border-neutral-700 text-center text-red-300">
-          {status.msg}
-        </div>
-      )}
-
-      {/* VISTA 1: Ecrã de Voto */}
-      {view === 'vote' && (
-        <div className="space-y-3">
-          {players.map((player) => (
-            <div key={player.id} className="flex items-center justify-between p-3.5 bg-neutral-900 border border-neutral-850 rounded-xl">
-              <div>
-                <p className="font-bold text-sm">{player.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] bg-red-950 text-red-400 px-2 py-0.5 rounded font-bold">{player.position}</span>
-                  <span className="text-[11px] text-neutral-500">{player.is_starter ? 'Titular' : 'Suplente'}</span>
+          {upcomingMatch && (
+            <div className="grid grid-cols-4 gap-2 mt-6">
+              {[
+                { label: 'DIAS', val: timeLeft.d },
+                { label: 'HORAS', val: timeLeft.h },
+                { label: 'MIN', val: timeLeft.m },
+                { label: 'SEG', val: timeLeft.s }
+              ].map((t, idx) => (
+                <div key={idx} className="bg-zinc-800 p-2.5 rounded-xl border border-zinc-700">
+                  <span className="block text-2xl font-black text-red-500">{t.val}</span>
+                  <span className="text-[9px] text-zinc-400 font-bold">{t.label}</span>
                 </div>
-              </div>
-
-              <select
-                value={ratings[player.id] || ''}
-                onChange={(e) => handleScore(player.id, Number(e.target.value))}
-                className="bg-neutral-800 text-red-500 font-extrabold text-base p-2 px-3 rounded-lg border border-neutral-700 outline-none"
-              >
-                <option value="" disabled>-</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-          ))}
-
-          <button
-            onClick={handleSubmit}
-            disabled={status.loading || !match}
-            className="w-full mt-4 bg-red-600 hover:bg-red-700 disabled:bg-neutral-800 font-bold py-3.5 rounded-xl cursor-pointer"
-          >
-            {status.loading ? 'A calcular...' : 'Submeter Avaliação'}
-          </button>
-        </div>
-      )}
-
-      {/* VISTA 2: Médias da Comunidade & Homem do Jogo */}
-      {view === 'results' && (
-        <div className="space-y-4">
-          {motm && Number(motm.avg_score) > 0 && (
-            <div className="p-4 rounded-xl bg-gradient-to-r from-red-950 to-neutral-900 border border-red-700 text-center">
-              <span className="text-[11px] uppercase tracking-wider font-extrabold text-red-400">🔥 Homem do Jogo</span>
-              <h3 className="text-xl font-black mt-0.5">{motm.player_name}</h3>
-              <p className="text-3xl font-black text-red-500 mt-1">{motm.avg_score}</p>
-              <p className="text-[11px] text-neutral-400 mt-1">{motm.total_votes} votos contabilizados</p>
+              ))}
             </div>
           )}
-
-          <div className="space-y-2">
-            {stats.map((s) => (
-              <div key={s.player_id} className="flex items-center justify-between p-3 bg-neutral-900 border border-neutral-800 rounded-xl">
-                <div>
-                  <p className="font-bold text-sm">{s.player_name}</p>
-                  <span className="text-[11px] text-neutral-400">{s.total_votes} votos</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-lg font-black text-red-500">{s.avg_score}</span>
-                  <span className="text-xs text-neutral-500"> /10</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="text-zinc-500 text-xs mt-6">A votação abre logo a seguir ao apito final!</p>
         </div>
+      )}
+
+      {/* Se HÁ votação aberta: Interface de Voto e Médias */}
+      {activeMatch && (
+        <>
+          <div className="text-center mb-5">
+            <span className="bg-red-600/20 text-red-500 border border-red-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+              Votação Aberta
+            </span>
+            <h2 className="text-xl font-bold mt-1">vs {activeMatch.opponent}</h2>
+          </div>
+
+          <div className="flex bg-zinc-900 p-1 rounded-xl mb-4 border border-zinc-800">
+            <button
+              onClick={() => setView('vote')}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg ${view === 'vote' ? 'bg-red-600' : 'text-zinc-400'}`}
+            >
+              Minhas Notas
+            </button>
+            <button
+              onClick={() => setView('results')}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg ${view === 'results' ? 'bg-red-600' : 'text-zinc-400'}`}
+            >
+              Médias
+            </button>
+          </div>
+
+          {view === 'vote' ? (
+            <div className="space-y-2.5">
+              {players.map(p => (
+                <div key={p.id} className="flex items-center justify-between p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
+                  <div>
+                    <p className="font-bold text-sm">{p.name}</p>
+                    <span className="text-[10px] text-red-400 font-semibold">{p.position}</span>
+                  </div>
+                  <select
+                    value={ratings[p.id] || ''}
+                    onChange={e => setRatings({ ...ratings, [p.id]: Number(e.target.value) })}
+                    className="bg-zinc-800 text-red-500 font-black p-2 rounded-lg border border-zinc-700 outline-none"
+                  >
+                    <option value="" disabled>-</option>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              ))}
+              <button
+                onClick={handleSubmit}
+                className="w-full mt-4 bg-red-600 hover:bg-red-700 font-black py-3.5 rounded-xl cursor-pointer"
+              >
+                Submeter Notas
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {stats.map(s => (
+                <div key={s.player_id} className="flex items-center justify-between p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
+                  <div>
+                    <p className="font-bold text-sm">{s.player_name}</p>
+                    <span className="text-[10px] text-zinc-500">{s.position} • {s.total_votes} votos</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-red-500">{s.avg_score}</span>
+                    <span className="text-xs text-zinc-500"> /10</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </main>
   );
