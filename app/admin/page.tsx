@@ -9,6 +9,14 @@ interface Player {
   photo_url: string;
 }
 
+const POSITION_ORDER: Record<string, number> = {
+  'GR': 1,
+  'DEF': 2,
+  'MED': 3,
+  'AVA': 4,
+  'TREINADOR': 5,
+};
+
 function AdminPlayerAvatar({ src, name }: { src: string; name: string }) {
   const [hasError, setHasError] = useState(false);
 
@@ -54,12 +62,18 @@ export default function AdminPage() {
     supabase
       .from('players')
       .select('*')
-      .order('name')
       .then(({ data }) => {
         if (data) {
-          const coach = (data as Player[]).find((p) => p.position === 'TREINADOR');
+          const sorted = (data as Player[]).sort((a, b) => {
+            const orderA = POSITION_ORDER[a.position] || 99;
+            const orderB = POSITION_ORDER[b.position] || 99;
+            if (orderA !== orderB) return orderA - orderB;
+            return a.name.localeCompare(b.name);
+          });
+
+          const coach = sorted.find((p) => p.position === 'TREINADOR');
           if (coach) setSelectedIds(new Set([coach.id]));
-          setPlayers(data as Player[]);
+          setPlayers(sorted);
         }
       });
   }, []);
@@ -83,13 +97,11 @@ export default function AdminPage() {
     setLoading(true);
     setStatus('A publicar encontro...');
 
-    // 1. Desativa jogos abertos anteriormente
     await supabase
       .from('matches')
       .update({ is_open_for_voting: false })
       .neq('id', '00000000-0000-0000-0000-000000000000');
 
-    // 2. Cria o novo encontro aberto para votos
     const { data: match, error: matchErr } = await supabase
       .from('matches')
       .insert({
@@ -107,7 +119,6 @@ export default function AdminPage() {
       return;
     }
 
-    // 3. Associa apenas os jogadores selecionados
     const lineups = Array.from(selectedIds).map((id) => ({
       match_id: match.id,
       player_id: id,
@@ -130,10 +141,10 @@ export default function AdminPage() {
       <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-5">
         <div>
           <h1 className="text-lg font-black text-red-600 tracking-tight">ADMIN • LANÇAR JOGO</h1>
-          <p className="text-xs text-zinc-400">Seleciona quem esteve em campo</p>
+          <p className="text-xs text-zinc-400">Seleciona quem jogou</p>
         </div>
         <span className="text-xs font-bold px-2 py-1 bg-red-600/20 text-red-400 border border-red-500/30 rounded">
-          {selectedIds.size} em campo
+          {selectedIds.size} selecionados
         </span>
       </div>
 
@@ -169,7 +180,7 @@ export default function AdminPage() {
       </div>
 
       <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-        Plantel Disponível:
+        Plantel Oficial:
       </p>
       <div className="grid grid-cols-2 gap-2 mb-6 max-h-[460px] overflow-y-auto pr-1">
         {players.map((p) => {
