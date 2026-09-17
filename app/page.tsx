@@ -34,13 +34,16 @@ const POSITION_ORDER: Record<string, number> = {
   'TREINADOR': 5,
 };
 
-// Símbolo Oficial Vetorial do Sport Lisboa e Benfica
+// Símbolo Oficial alojado diretamente no teu Supabase Storage
+const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.png";
+
 function BenficaEmblem({ className = "w-8 h-8" }: { className?: string }) {
   return (
     <img
-      src="https://upload.wikimedia.org/wikipedia/pt/2/25/Sport_Lisboa_e_Benfica_logo.svg"
-      alt="SL Benfica"
-      className={`${className} object-contain drop-shadow-[0_2px_8px_rgba(220,38,38,0.4)]`}
+      src={BENFICA_LOGO_URL}
+      alt="Sport Lisboa e Benfica"
+      className={`${className} object-contain drop-shadow-[0_2px_10px_rgba(220,38,38,0.45)]`}
+      loading="eager"
     />
   );
 }
