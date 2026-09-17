@@ -105,6 +105,7 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
+      // 1. Procurar jogo ativo para votos
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -135,15 +136,21 @@ export default function Home() {
         }
         loadStats(matchData.id);
       } else {
-        const { data: next } = await supabase
-          .from('matches')
-          .select('*')
-          .gte('date', new Date().toISOString())
-          .order('date', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (next) setUpcomingMatch(next as Match);
         setView('history');
+      }
+
+      // 2. Procurar SEMPRE o próximo jogo futuro no calendário
+      const { data: next } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('is_open_for_voting', false)
+        .gte('date', new Date().toISOString())
+        .order('date', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (next) {
+        setUpcomingMatch(next as Match);
       }
 
       loadHistory();
@@ -233,19 +240,19 @@ export default function Home() {
 
   const handleShare = async () => {
     const opponent = activeMatch ? activeMatch.opponent : 'último jogo';
-    const topPlayerText = motm ? `★ MVP: ${motm.player_name} (${motm.avg_score}/10)` : '';
-    const shareText = `As minhas notas do SL Benfica vs ${opponent} no BenficaVote!\n${topPlayerText}\nVota também: ${window.location.origin}`;
+    const topPlayerText = motm && Number(motm.avg_score) > 0 ? `★ MVP: ${motm.player_name} (${motm.avg_score}/10)\n` : '';
+    const shareText = `Avaliação do SL Benfica vs ${opponent} no BenficaVote!\n${topPlayerText}Vota ou consulta as notas: ${window.location.origin}`;
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'BenficaVote • Avaliação de Jogo',
+          title: 'BenficaVote • Avaliações',
           text: shareText,
           url: window.location.origin,
         });
         return;
       } catch (e) {
-        // Fallback para cópia se o utilizador cancelar
+        // Fallback para cópia
       }
     }
 
@@ -256,7 +263,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-28 selection:bg-red-600 selection:text-white">
-      {/* Topo */}
+      {/* Topo Fixo com Emblema SVG */}
       <header className="border-b border-zinc-800/80 bg-[#121214]/90 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -271,55 +278,50 @@ export default function Home() {
           {activeMatch ? (
             <div className="flex items-center gap-1.5 bg-red-950/80 text-red-400 border border-red-800/60 px-2.5 py-1 rounded-full shadow-[0_0_12px_rgba(220,38,38,0.2)]">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-              <span className="text-[10px] font-black uppercase tracking-wider">Votação Aberta</span>
+              <span className="text-[10px] font-black uppercase tracking-wider">Em Aberto</span>
             </div>
           ) : (
-            <button
-              onClick={() => setView('history')}
-              className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-800/60 px-2.5 py-1 rounded-lg border border-zinc-700/60"
-            >
-              Época
-            </button>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-800/60 px-2.5 py-1 rounded-lg border border-zinc-700/60">
+              Arquivo
+            </span>
           )}
         </div>
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Próximo Jogo se não houver ativo */}
-        {!activeMatch && view !== 'history' && (
-          <div className="mt-4 p-7 rounded-3xl bg-gradient-to-b from-[#18181c] to-[#101013] border border-zinc-800/90 text-center shadow-2xl relative overflow-hidden">
-            <div className="w-16 h-16 mx-auto mb-3 flex items-center justify-center bg-zinc-900/80 border border-zinc-800 rounded-2xl p-2 shadow-inner">
-              <BenficaEmblem className="w-12 h-12" />
+        {/* CARTÃO DO PRÓXIMO JOGO COM CONTAGEM DECRESCENTE (SEMPRE VISÍVEL SE EXISTIR) */}
+        {upcomingMatch && (
+          <div className="mb-4 p-5 rounded-3xl bg-gradient-to-b from-[#18181c] to-[#101013] border border-zinc-800/90 text-center shadow-xl relative overflow-hidden">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <BenficaEmblem className="w-5 h-5" />
+              <span className="text-[10px] font-black tracking-widest text-red-500 uppercase bg-red-950/60 px-2.5 py-0.5 rounded-full border border-red-900/50">
+                Próximo Encontro
+              </span>
             </div>
 
-            <span className="text-[10px] font-black tracking-widest text-red-500 uppercase bg-red-950/60 px-2.5 py-1 rounded-full border border-red-900/50">
-              Próximo Encontro
-            </span>
-            <h2 className="text-2xl font-black mt-3 text-white tracking-tight">
-              {upcomingMatch ? `vs ${upcomingMatch.opponent}` : 'A preparar calendário...'}
+            <h2 className="text-xl font-black text-white tracking-tight">
+              SL Benfica vs {upcomingMatch.opponent}
             </h2>
-            <p className="text-xs text-zinc-400 mt-1 font-medium">{upcomingMatch?.competition || 'Sport Lisboa e Benfica'}</p>
+            <p className="text-xs text-zinc-400 mt-0.5 font-medium">{upcomingMatch.competition}</p>
 
-            {upcomingMatch && (
-              <div className="grid grid-cols-4 gap-2 mt-6">
-                {[
-                  { label: 'DIAS', val: timeLeft.d },
-                  { label: 'HORAS', val: timeLeft.h },
-                  { label: 'MIN', val: timeLeft.m },
-                  { label: 'SEG', val: timeLeft.s },
-                ].map((t, idx) => (
-                  <div key={idx} className="bg-zinc-900/90 py-3 rounded-2xl border border-zinc-800/80 shadow">
-                    <span className="block text-2xl font-black text-red-500 leading-none">{t.val}</span>
-                    <span className="text-[8px] font-extrabold text-zinc-400 mt-1 block">{t.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-4 gap-2 mt-4">
+              {[
+                { label: 'DIAS', val: timeLeft.d },
+                { label: 'HORAS', val: timeLeft.h },
+                { label: 'MIN', val: timeLeft.m },
+                { label: 'SEG', val: timeLeft.s },
+              ].map((t, idx) => (
+                <div key={idx} className="bg-zinc-900/90 py-2.5 rounded-2xl border border-zinc-800/80 shadow">
+                  <span className="block text-xl font-black text-red-500 leading-none">{t.val}</span>
+                  <span className="text-[8px] font-extrabold text-zinc-400 mt-1 block">{t.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Alternador de Vistas */}
-        <div className="flex bg-zinc-900/90 p-1.5 rounded-2xl border border-zinc-800 mb-4 shadow-inner mt-2">
+        {/* Separadores de Navegação */}
+        <div className="flex bg-zinc-900/90 p-1.5 rounded-2xl border border-zinc-800 mb-4 shadow-inner">
           {activeMatch && (
             <>
               <button
@@ -367,7 +369,7 @@ export default function Home() {
           <>
             <div className="mb-4 px-1">
               <div className="flex justify-between text-[11px] font-bold text-zinc-400 mb-1.5">
-                <span>Progresso do boletim</span>
+                <span>Progresso do teu voto</span>
                 <span className="text-red-400">{Math.round(progressPercent)}%</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -454,15 +456,16 @@ export default function Home() {
                 className="w-full mt-6 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:from-zinc-800 disabled:to-zinc-800 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-sm shadow-[0_4px_25px_rgba(220,38,38,0.45)] transition-all transform active:scale-98 cursor-pointer flex items-center justify-center gap-2"
               >
                 <BenficaEmblem className="w-5 h-5" />
-                {submitting ? 'A submeter votos...' : 'Submeter Notas'}
+                {submitting ? 'A gravar os teus votos...' : 'Submeter Avaliações'}
               </button>
             </div>
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS COM BOTÃO DE PARTILHA */}
+        {/* VISTA 2: RESULTADOS COM BOTÃO DE PARTILHA SEMPRE VISÍVEL */}
         {activeMatch && view === 'results' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Homem do Jogo (se já houver notas) */}
             {motm && Number(motm.avg_score) > 0 && (
               <div className="relative overflow-hidden p-6 rounded-3xl bg-gradient-to-br from-[#2a1012] via-[#1a1215] to-[#111114] border-2 border-red-500/80 shadow-[0_0_30px_rgba(220,38,38,0.3)] text-center">
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/15 px-3 py-1 rounded-full border border-amber-500/30 inline-block mb-3">
@@ -479,20 +482,21 @@ export default function Home() {
                   <span className="text-xs text-zinc-400 font-bold">/ 10</span>
                 </div>
                 <p className="text-[11px] text-zinc-400 mt-1">{motm.total_votes} avaliações registadas</p>
-
-                {/* Botão de Partilha */}
-                <button
-                  onClick={handleShare}
-                  className="mt-5 w-full bg-zinc-800/90 hover:bg-zinc-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-700 flex items-center justify-center gap-2 transition-all active:scale-95 shadow cursor-pointer"
-                >
-                  <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                  {copied ? '✓ Copiado para a Área de Transferência!' : 'Partilhar Resultado'}
-                </button>
               </div>
             )}
 
+            {/* BOTÃO DE PARTILHA SEMPRE VISÍVEL NO ECRÃ DE RESULTADOS */}
+            <button
+              onClick={handleShare}
+              className="w-full bg-zinc-900/90 hover:bg-zinc-800 text-white font-black py-3.5 px-4 rounded-2xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2.5 transition-all active:scale-98 shadow-md cursor-pointer"
+            >
+              <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              {copied ? '✓ Link copiado para partilhar!' : 'Partilhar Médias nas Redes'}
+            </button>
+
+            {/* Lista com as Médias */}
             <div className="space-y-2">
               {stats.map((s, idx) => (
                 <div
@@ -522,21 +526,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO E CLASSIFICAÇÃO DA ÉPOCA */}
+        {/* VISTA 3: HISTÓRICO E RANKING DA ÉPOCA */}
         {view === 'history' && (
           <div className="space-y-5">
-            {/* Melhores da Época */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
-                  Classificação da Época
+                  Melhores da Temporada
                 </h3>
-                <span className="text-[10px] text-zinc-500 font-bold">Top Jogadores</span>
+                <span className="text-[10px] text-zinc-500 font-bold">Médias Globais</span>
               </div>
 
               {seasonStats.length === 0 ? (
-                <p className="text-xs text-zinc-500 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 text-center">
-                  Ainda não há jogos finalizados registados esta época.
+                <p className="text-xs text-zinc-500 bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800 text-center">
+                  Ainda não existem jogos encerrados registados nesta época.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -567,14 +570,13 @@ export default function Home() {
               )}
             </div>
 
-            {/* Encontros Anteriores */}
             <div>
               <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400 mb-2">
-                Últimos Jogos Encerrados
+                Jogos Anteriores
               </h3>
               {pastMatches.length === 0 ? (
-                <p className="text-xs text-zinc-500 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 text-center">
-                  Sem partidas anteriores no arquivo.
+                <p className="text-xs text-zinc-500 bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800 text-center">
+                  Sem registo de jogos passados no arquivo.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -588,7 +590,7 @@ export default function Home() {
                         <span className="text-[10px] text-zinc-500">{m.competition}</span>
                       </div>
                       <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-1 rounded">
-                        Encerrado
+                        Terminado
                       </span>
                     </div>
                   ))}

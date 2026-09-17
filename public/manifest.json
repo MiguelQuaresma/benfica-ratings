@@ -8,9 +8,9 @@
   "theme_color": "#dc2626",
   "icons": [
     {
-      "src": "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.svg",
+      "src": "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp",
       "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "type": "image/webp",
       "purpose": "any maskable"
     }
   ]
