@@ -7,6 +7,7 @@ interface Match {
   opponent: string;
   competition: string;
   date: string;
+  is_home?: boolean;
   is_open_for_voting: boolean;
 }
 
@@ -90,6 +91,12 @@ function PlayerAvatar({ src, name, isCoach = false }: { src: string; name: strin
   );
 }
 
+// Devolve o texto correto respeitando Casa ou Fora
+function formatMatchTitle(match: Match) {
+  const isHome = match.is_home !== false;
+  return isHome ? `SL Benfica vs ${match.opponent}` : `${match.opponent} vs SL Benfica`;
+}
+
 export default function Home() {
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
@@ -105,7 +112,7 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
-      // 1. Procurar jogo ativo para votos
+      // 1. Procurar jogo ativo para votação
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -139,7 +146,7 @@ export default function Home() {
         setView('history');
       }
 
-      // 2. Procurar SEMPRE o próximo jogo futuro no calendário
+      // 2. Procurar o próximo jogo futuro agendado
       const { data: next } = await supabase
         .from('matches')
         .select('*')
@@ -239,9 +246,9 @@ export default function Home() {
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
   const handleShare = async () => {
-    const opponent = activeMatch ? activeMatch.opponent : 'último jogo';
+    const matchTitle = activeMatch ? formatMatchTitle(activeMatch) : 'último encontro';
     const topPlayerText = motm && Number(motm.avg_score) > 0 ? `★ MVP: ${motm.player_name} (${motm.avg_score}/10)\n` : '';
-    const shareText = `Avaliação do SL Benfica vs ${opponent} no BenficaVote!\n${topPlayerText}Vota ou consulta as notas: ${window.location.origin}`;
+    const shareText = `Avaliação do ${matchTitle} no BenficaVote!\n${topPlayerText}Vota ou consulta as notas: ${window.location.origin}`;
 
     if (navigator.share) {
       try {
@@ -252,7 +259,7 @@ export default function Home() {
         });
         return;
       } catch (e) {
-        // Fallback para cópia
+        // Fallback
       }
     }
 
@@ -263,7 +270,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-28 selection:bg-red-600 selection:text-white">
-      {/* Topo Fixo com Emblema SVG */}
+      {/* Topo Fixo */}
       <header className="border-b border-zinc-800/80 bg-[#121214]/90 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -289,18 +296,18 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* CARTÃO DO PRÓXIMO JOGO COM CONTAGEM DECRESCENTE (SEMPRE VISÍVEL SE EXISTIR) */}
+        {/* PRÓXIMO JOGO COM CONTAGEM DECRESCENTE */}
         {upcomingMatch && (
           <div className="mb-4 p-5 rounded-3xl bg-gradient-to-b from-[#18181c] to-[#101013] border border-zinc-800/90 text-center shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-center gap-2 mb-2">
               <BenficaEmblem className="w-5 h-5" />
               <span className="text-[10px] font-black tracking-widest text-red-500 uppercase bg-red-950/60 px-2.5 py-0.5 rounded-full border border-red-900/50">
-                Próximo Encontro
+                Próximo Encontro • {upcomingMatch.is_home !== false ? 'Casa' : 'Fora'}
               </span>
             </div>
 
             <h2 className="text-xl font-black text-white tracking-tight">
-              SL Benfica vs {upcomingMatch.opponent}
+              {formatMatchTitle(upcomingMatch)}
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5 font-medium">{upcomingMatch.competition}</p>
 
@@ -320,7 +327,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Separadores de Navegação */}
+        {/* Separadores */}
         <div className="flex bg-zinc-900/90 p-1.5 rounded-2xl border border-zinc-800 mb-4 shadow-inner">
           {activeMatch && (
             <>
@@ -367,6 +374,15 @@ export default function Home() {
         {/* VISTA 1: VOTAR */}
         {activeMatch && view === 'vote' && (
           <>
+            <div className="mb-3 text-center">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                {activeMatch.competition}
+              </span>
+              <h2 className="text-base font-black text-white">
+                {formatMatchTitle(activeMatch)}
+              </h2>
+            </div>
+
             <div className="mb-4 px-1">
               <div className="flex justify-between text-[11px] font-bold text-zinc-400 mb-1.5">
                 <span>Progresso do teu voto</span>
@@ -462,10 +478,9 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS COM BOTÃO DE PARTILHA SEMPRE VISÍVEL */}
+        {/* VISTA 2: RESULTADOS */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
-            {/* Homem do Jogo (se já houver notas) */}
             {motm && Number(motm.avg_score) > 0 && (
               <div className="relative overflow-hidden p-6 rounded-3xl bg-gradient-to-br from-[#2a1012] via-[#1a1215] to-[#111114] border-2 border-red-500/80 shadow-[0_0_30px_rgba(220,38,38,0.3)] text-center">
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/15 px-3 py-1 rounded-full border border-amber-500/30 inline-block mb-3">
@@ -485,7 +500,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* BOTÃO DE PARTILHA SEMPRE VISÍVEL NO ECRÃ DE RESULTADOS */}
             <button
               onClick={handleShare}
               className="w-full bg-zinc-900/90 hover:bg-zinc-800 text-white font-black py-3.5 px-4 rounded-2xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2.5 transition-all active:scale-98 shadow-md cursor-pointer"
@@ -496,7 +510,6 @@ export default function Home() {
               {copied ? '✓ Link copiado para partilhar!' : 'Partilhar Médias nas Redes'}
             </button>
 
-            {/* Lista com as Médias */}
             <div className="space-y-2">
               {stats.map((s, idx) => (
                 <div
@@ -526,7 +539,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO E RANKING DA ÉPOCA */}
+        {/* VISTA 3: HISTÓRICO */}
         {view === 'history' && (
           <div className="space-y-5">
             <div>
@@ -586,7 +599,7 @@ export default function Home() {
                       className="p-3.5 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex items-center justify-between"
                     >
                       <div>
-                        <p className="text-xs font-black text-white">SL Benfica vs {m.opponent}</p>
+                        <p className="text-xs font-black text-white">{formatMatchTitle(m)}</p>
                         <span className="text-[10px] text-zinc-500">{m.competition}</span>
                       </div>
                       <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-1 rounded">

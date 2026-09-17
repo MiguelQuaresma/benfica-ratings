@@ -57,6 +57,7 @@ export default function AdminPage() {
   const [schedOpponent, setSchedOpponent] = useState('');
   const [schedCompetition, setSchedCompetition] = useState('Liga Portugal');
   const [schedDateTime, setSchedDateTime] = useState('');
+  const [schedIsHome, setSchedIsHome] = useState(true);
   const [schedLoading, setSchedLoading] = useState(false);
 
   // Estado para Abrir Votação Imediata
@@ -64,6 +65,7 @@ export default function AdminPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [voteOpponent, setVoteOpponent] = useState('');
   const [voteCompetition, setVoteCompetition] = useState('Liga Portugal');
+  const [voteIsHome, setVoteIsHome] = useState(true);
   const [voteLoading, setVoteLoading] = useState(false);
 
   const [status, setStatus] = useState('');
@@ -98,7 +100,7 @@ export default function AdminPage() {
     setSelectedIds(next);
   };
 
-  // 1. Agendar Próximo Jogo (Contagem decrescente)
+  // 1. Agendar Próximo Jogo
   const handleScheduleMatch = async () => {
     if (!schedOpponent.trim() || !schedDateTime) {
       alert('Preenche o adversário e escolhe a data/hora do jogo.');
@@ -114,6 +116,7 @@ export default function AdminPage() {
       opponent: schedOpponent.trim(),
       competition: schedCompetition.trim(),
       date: isoDate,
+      is_home: schedIsHome,
       is_open_for_voting: false,
     });
 
@@ -122,13 +125,14 @@ export default function AdminPage() {
     if (error) {
       setStatus('Erro ao agendar: ' + error.message);
     } else {
-      setStatus(`✓ Próximo jogo vs ${schedOpponent} agendado com sucesso!`);
+      const matchLabel = schedIsHome ? `SL Benfica vs ${schedOpponent}` : `${schedOpponent} vs SL Benfica`;
+      setStatus(`✓ Próximo jogo (${matchLabel}) agendado!`);
       setSchedOpponent('');
       setSchedDateTime('');
     }
   };
 
-  // 2. Abrir Votações Imediatas (Apito final)
+  // 2. Abrir Votação Imediata
   const handleOpenVoting = async () => {
     if (!voteOpponent.trim() || selectedIds.size === 0) {
       alert('Preenche o adversário e seleciona pelo menos um jogador.');
@@ -149,6 +153,7 @@ export default function AdminPage() {
         opponent: voteOpponent.trim(),
         competition: voteCompetition.trim(),
         date: new Date().toISOString(),
+        is_home: voteIsHome,
         is_open_for_voting: true,
       })
       .select()
@@ -172,7 +177,8 @@ export default function AdminPage() {
     if (lineErr) {
       setStatus('Erro ao associar plantel: ' + lineErr.message);
     } else {
-      setStatus(`✓ Votação aberta com sucesso para vs ${voteOpponent}!`);
+      const matchLabel = voteIsHome ? `SL Benfica vs ${voteOpponent}` : `${voteOpponent} vs SL Benfica`;
+      setStatus(`✓ Votação aberta com sucesso (${matchLabel})!`);
       setVoteOpponent('');
     }
   };
@@ -188,9 +194,7 @@ export default function AdminPage() {
         <button
           onClick={() => { setTab('schedule'); setStatus(''); }}
           className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-            tab === 'schedule'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white'
+            tab === 'schedule' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
           }`}
         >
           1. Agendar Próximo
@@ -198,15 +202,14 @@ export default function AdminPage() {
         <button
           onClick={() => { setTab('open_voting'); setStatus(''); }}
           className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-            tab === 'open_voting'
-              ? 'bg-red-600 text-white shadow'
-              : 'text-zinc-400 hover:text-white'
+            tab === 'open_voting' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
           }`}
         >
           2. Abrir Votação
         </button>
       </div>
 
+      {/* MODO 1: AGENDAR PRÓXIMO */}
       {tab === 'schedule' && (
         <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-5 rounded-2xl shadow-xl">
           <div>
@@ -214,6 +217,36 @@ export default function AdminPage() {
               Contagem Decrescente
             </span>
             <h2 className="text-base font-black text-white">Marcar Próximo Encontro</h2>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+              Local do Encontro
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSchedIsHome(true)}
+                className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
+                  schedIsHome
+                    ? 'bg-red-600 border-red-500 text-white shadow'
+                    : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                🏠 Casa (Luz)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSchedIsHome(false)}
+                className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
+                  !schedIsHome
+                    ? 'bg-red-600 border-red-500 text-white shadow'
+                    : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                ✈️ Fora
+              </button>
+            </div>
           </div>
 
           <div>
@@ -227,6 +260,11 @@ export default function AdminPage() {
               onChange={(e) => setSchedOpponent(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
             />
+            {schedOpponent.trim() && (
+              <p className="text-[11px] text-zinc-400 mt-1 font-semibold">
+                Vai aparecer: <span className="text-white">{schedIsHome ? `SL Benfica vs ${schedOpponent}` : `${schedOpponent} vs SL Benfica`}</span>
+              </p>
+            )}
           </div>
 
           <div>
@@ -256,9 +294,6 @@ export default function AdminPage() {
               onChange={(e) => setSchedDateTime(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
             />
-            <p className="text-[10px] text-zinc-500 mt-1">
-              Alimenta o cronómetro de Dias / Horas / Minutos na página principal.
-            </p>
           </div>
 
           <button
@@ -271,6 +306,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* MODO 2: ABRIR VOTAÇÃO */}
       {tab === 'open_voting' && (
         <div className="space-y-4">
           <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl space-y-3">
@@ -285,6 +321,36 @@ export default function AdminPage() {
 
             <div>
               <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                Local do Encontro
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVoteIsHome(true)}
+                  className={`py-2 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
+                    voteIsHome
+                      ? 'bg-red-600 border-red-500 text-white shadow'
+                      : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
+                  }`}
+                >
+                  🏠 Casa (Luz)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVoteIsHome(false)}
+                  className={`py-2 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
+                    !voteIsHome
+                      ? 'bg-red-600 border-red-500 text-white shadow'
+                      : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
+                  }`}
+                >
+                  ✈️ Fora
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
                 Adversário
               </label>
               <input
@@ -294,6 +360,11 @@ export default function AdminPage() {
                 onChange={(e) => setVoteOpponent(e.target.value)}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white focus:border-red-500 outline-none"
               />
+              {voteOpponent.trim() && (
+                <p className="text-[11px] text-zinc-400 mt-1 font-semibold">
+                  Vai aparecer: <span className="text-white">{voteIsHome ? `SL Benfica vs ${voteOpponent}` : `${voteOpponent} vs SL Benfica`}</span>
+                </p>
+              )}
             </div>
 
             <div>
