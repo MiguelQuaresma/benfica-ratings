@@ -44,7 +44,7 @@ const POSITION_ORDER: Record<string, number> = {
   'TREINADOR': 5,
 };
 
-const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.svg";
+const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp";
 
 function BenficaEmblem({ className = "w-8 h-8" }: { className?: string }) {
   return (
