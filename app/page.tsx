@@ -35,7 +35,7 @@ const POSITION_ORDER: Record<string, number> = {
 };
 
 // Símbolo Oficial alojado diretamente no teu Supabase Storage
-const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.png";
+const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp";
 
 function BenficaEmblem({ className = "w-8 h-8" }: { className?: string }) {
   return (
