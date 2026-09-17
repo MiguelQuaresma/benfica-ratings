@@ -1,0 +1,17 @@
+{
+  "name": "BenficaVote",
+  "short_name": "BenficaVote",
+  "description": "Avalia o desempenho dos jogadores do SL Benfica",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
