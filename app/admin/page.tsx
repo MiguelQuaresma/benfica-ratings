@@ -138,13 +138,11 @@ export default function AdminPage() {
     setVoteLoading(true);
     setStatus('A publicar votação...');
 
-    // Desativa votações abertas anteriormente
     await supabase
       .from('matches')
       .update({ is_open_for_voting: false })
       .neq('id', '00000000-0000-0000-0000-000000000000');
 
-    // Cria o encontro já aberto para os votos
     const { data: match, error: matchErr } = await supabase
       .from('matches')
       .insert({
@@ -162,7 +160,6 @@ export default function AdminPage() {
       return;
     }
 
-    // Associa os jogadores que alinharam
     const lineups = Array.from(selectedIds).map((id) => ({
       match_id: match.id,
       player_id: id,
@@ -182,13 +179,11 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-20">
-      {/* Topo do Admin */}
       <div className="pb-4 border-b border-zinc-800 mb-5">
         <h1 className="text-lg font-black text-red-600 tracking-tight">ADMIN • GESTÃO DE JOGOS</h1>
         <p className="text-xs text-zinc-400">Agendar partidas e abrir votações pós-jogo</p>
       </div>
 
-      {/* Seletor de Modo */}
       <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 mb-5">
         <button
           onClick={() => { setTab('schedule'); setStatus(''); }}
@@ -212,7 +207,6 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* MODO 1: AGENDAR PRÓXIMO JOGO */}
       {tab === 'schedule' && (
         <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-5 rounded-2xl shadow-xl">
           <div>
@@ -263,7 +257,7 @@ export default function AdminPage() {
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
             />
             <p className="text-[10px] text-zinc-500 mt-1">
-              Isto alimenta o cronómetro de Dias / Horas / Minutos na página principal.
+              Alimenta o cronómetro de Dias / Horas / Minutos na página principal.
             </p>
           </div>
 
@@ -277,7 +271,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODO 2: ABRIR VOTAÇÃO IMEDIATA (APITO FINAL) */}
       {tab === 'open_voting' && (
         <div className="space-y-4">
           <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl space-y-3">
@@ -323,7 +316,7 @@ export default function AdminPage() {
 
           <div>
             <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-              Quem jogou hoje? (Clica para ativar/desativar):
+              Quem jogou hoje? (Clica para selecionar):
             </p>
 
             <div className="grid grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
@@ -367,7 +360,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Feedback de Sucesso ou Erro */}
       {status && (
         <p
           className={`text-center text-xs mt-4 font-bold p-3 rounded-xl border ${
