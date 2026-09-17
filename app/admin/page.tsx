@@ -51,11 +51,21 @@ function AdminPlayerAvatar({ src, name }: { src: string; name: string }) {
 }
 
 export default function AdminPage() {
+  const [tab, setTab] = useState<'schedule' | 'open_voting'>('schedule');
+
+  // Estado para Agendar Próximo Jogo
+  const [schedOpponent, setSchedOpponent] = useState('');
+  const [schedCompetition, setSchedCompetition] = useState('Liga Portugal');
+  const [schedDateTime, setSchedDateTime] = useState('');
+  const [schedLoading, setSchedLoading] = useState(false);
+
+  // Estado para Abrir Votação Imediata
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [opponent, setOpponent] = useState('');
-  const [competition, setCompetition] = useState('Liga Portugal');
-  const [loading, setLoading] = useState(false);
+  const [voteOpponent, setVoteOpponent] = useState('');
+  const [voteCompetition, setVoteCompetition] = useState('Liga Portugal');
+  const [voteLoading, setVoteLoading] = useState(false);
+
   const [status, setStatus] = useState('');
 
   useEffect(() => {
@@ -88,25 +98,58 @@ export default function AdminPage() {
     setSelectedIds(next);
   };
 
-  const handleCreateMatch = async () => {
-    if (!opponent.trim() || selectedIds.size === 0) {
+  // 1. Agendar Próximo Jogo (Contagem decrescente)
+  const handleScheduleMatch = async () => {
+    if (!schedOpponent.trim() || !schedDateTime) {
+      alert('Preenche o adversário e escolhe a data/hora do jogo.');
+      return;
+    }
+
+    setSchedLoading(true);
+    setStatus('A agendar jogo...');
+
+    const isoDate = new Date(schedDateTime).toISOString();
+
+    const { error } = await supabase.from('matches').insert({
+      opponent: schedOpponent.trim(),
+      competition: schedCompetition.trim(),
+      date: isoDate,
+      is_open_for_voting: false,
+    });
+
+    setSchedLoading(false);
+
+    if (error) {
+      setStatus('Erro ao agendar: ' + error.message);
+    } else {
+      setStatus(`✓ Próximo jogo vs ${schedOpponent} agendado com sucesso!`);
+      setSchedOpponent('');
+      setSchedDateTime('');
+    }
+  };
+
+  // 2. Abrir Votações Imediatas (Apito final)
+  const handleOpenVoting = async () => {
+    if (!voteOpponent.trim() || selectedIds.size === 0) {
       alert('Preenche o adversário e seleciona pelo menos um jogador.');
       return;
     }
 
-    setLoading(true);
-    setStatus('A publicar encontro...');
+    setVoteLoading(true);
+    setStatus('A publicar votação...');
 
+    // Desativa votações abertas anteriormente
     await supabase
       .from('matches')
       .update({ is_open_for_voting: false })
       .neq('id', '00000000-0000-0000-0000-000000000000');
 
+    // Cria o encontro já aberto para os votos
     const { data: match, error: matchErr } = await supabase
       .from('matches')
       .insert({
-        opponent: opponent.trim(),
-        competition: competition.trim(),
+        opponent: voteOpponent.trim(),
+        competition: voteCompetition.trim(),
         date: new Date().toISOString(),
         is_open_for_voting: true,
       })
@@ -115,10 +158,11 @@ export default function AdminPage() {
 
     if (matchErr || !match) {
       setStatus('Erro: ' + (matchErr?.message || 'Falha ao criar jogo'));
-      setLoading(false);
+      setVoteLoading(false);
       return;
     }
 
+    // Associa os jogadores que alinharam
     const lineups = Array.from(selectedIds).map((id) => ({
       match_id: match.id,
       player_id: id,
@@ -126,104 +170,210 @@ export default function AdminPage() {
     }));
 
     const { error: lineErr } = await supabase.from('match_lineups').insert(lineups);
-    setLoading(false);
+    setVoteLoading(false);
 
     if (lineErr) {
-      setStatus('Erro ao associar jogadores: ' + lineErr.message);
+      setStatus('Erro ao associar plantel: ' + lineErr.message);
     } else {
-      setStatus(`✓ Votação aberta com sucesso para vs ${opponent}!`);
-      setOpponent('');
+      setStatus(`✓ Votação aberta com sucesso para vs ${voteOpponent}!`);
+      setVoteOpponent('');
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-16">
-      <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-5">
-        <div>
-          <h1 className="text-lg font-black text-red-600 tracking-tight">ADMIN • LANÇAR JOGO</h1>
-          <p className="text-xs text-zinc-400">Seleciona quem jogou</p>
-        </div>
-        <span className="text-xs font-bold px-2 py-1 bg-red-600/20 text-red-400 border border-red-500/30 rounded">
-          {selectedIds.size} selecionados
-        </span>
+    <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-20">
+      {/* Topo do Admin */}
+      <div className="pb-4 border-b border-zinc-800 mb-5">
+        <h1 className="text-lg font-black text-red-600 tracking-tight">ADMIN • GESTÃO DE JOGOS</h1>
+        <p className="text-xs text-zinc-400">Agendar partidas e abrir votações pós-jogo</p>
       </div>
 
-      <div className="space-y-3 bg-zinc-900/90 border border-zinc-800 p-4 rounded-xl mb-5">
-        <div>
-          <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-            Adversário
-          </label>
-          <input
-            type="text"
-            placeholder="ex: FC Porto, Sporting CP, Real Madrid..."
-            value={opponent}
-            onChange={(e) => setOpponent(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:border-red-500 outline-none"
-          />
-        </div>
-        <div>
-          <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-            Competição
-          </label>
-          <select
-            value={competition}
-            onChange={(e) => setCompetition(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:border-red-500 outline-none"
-          >
-            <option value="Liga Portugal">Liga Portugal</option>
-            <option value="Liga dos Campeões">Liga dos Campeões</option>
-            <option value="Liga Europa">Liga Europa</option>
-            <option value="Taça de Portugal">Taça de Portugal</option>
-            <option value="Taça da Liga">Taça da Liga</option>
-          </select>
-        </div>
+      {/* Seletor de Modo */}
+      <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 mb-5">
+        <button
+          onClick={() => { setTab('schedule'); setStatus(''); }}
+          className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+            tab === 'schedule'
+              ? 'bg-red-600 text-white shadow'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          1. Agendar Próximo
+        </button>
+        <button
+          onClick={() => { setTab('open_voting'); setStatus(''); }}
+          className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+            tab === 'open_voting'
+              ? 'bg-red-600 text-white shadow'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          2. Abrir Votação
+        </button>
       </div>
 
-      <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-        Plantel Oficial:
-      </p>
-      <div className="grid grid-cols-2 gap-2 mb-6 max-h-[460px] overflow-y-auto pr-1">
-        {players.map((p) => {
-          const checked = selectedIds.has(p.id);
-          const isCoach = p.position === 'TREINADOR';
+      {/* MODO 1: AGENDAR PRÓXIMO JOGO */}
+      {tab === 'schedule' && (
+        <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-5 rounded-2xl shadow-xl">
+          <div>
+            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest block mb-1">
+              Contagem Decrescente
+            </span>
+            <h2 className="text-base font-black text-white">Marcar Próximo Encontro</h2>
+          </div>
 
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => togglePlayer(p.id)}
-              className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all active:scale-95 ${
-                checked
-                  ? isCoach
-                    ? 'bg-amber-600/30 border-amber-500 text-white'
-                    : 'bg-red-600/30 border-red-500 text-white'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400'
-              }`}
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+              Adversário
+            </label>
+            <input
+              type="text"
+              placeholder="ex: FC Porto, Sporting CP, PSG..."
+              value={schedOpponent}
+              onChange={(e) => setSchedOpponent(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+              Competição
+            </label>
+            <select
+              value={schedCompetition}
+              onChange={(e) => setSchedCompetition(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
             >
-              <AdminPlayerAvatar src={p.photo_url} name={p.name} />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold truncate text-white">{p.name}</p>
-                <span className={`text-[9px] font-semibold ${checked ? 'text-zinc-200' : 'text-zinc-500'}`}>
-                  {p.position}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+              <option value="Liga Portugal">Liga Portugal</option>
+              <option value="Liga dos Campeões">Liga dos Campeões</option>
+              <option value="Liga Europa">Liga Europa</option>
+              <option value="Taça de Portugal">Taça de Portugal</option>
+              <option value="Taça da Liga">Taça da Liga</option>
+            </select>
+          </div>
 
-      <button
-        onClick={handleCreateMatch}
-        disabled={loading}
-        className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-4 rounded-xl text-sm uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
-      >
-        {loading ? 'A processar...' : 'Abrir Votações Agora'}
-      </button>
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+              Data e Hora de Início
+            </label>
+            <input
+              type="datetime-local"
+              value={schedDateTime}
+              onChange={(e) => setSchedDateTime(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
+            />
+            <p className="text-[10px] text-zinc-500 mt-1">
+              Isto alimenta o cronómetro de Dias / Horas / Minutos na página principal.
+            </p>
+          </div>
 
+          <button
+            onClick={handleScheduleMatch}
+            disabled={schedLoading}
+            className="w-full mt-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
+          >
+            {schedLoading ? 'A agendar...' : 'Guardar no Calendário'}
+          </button>
+        </div>
+      )}
+
+      {/* MODO 2: ABRIR VOTAÇÃO IMEDIATA (APITO FINAL) */}
+      {tab === 'open_voting' && (
+        <div className="space-y-4">
+          <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">
+                Apito Final
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-red-600/20 text-red-400 border border-red-500/30 rounded-md">
+                {selectedIds.size} selecionados
+              </span>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                Adversário
+              </label>
+              <input
+                type="text"
+                placeholder="ex: FC Porto, Gil Vicente..."
+                value={voteOpponent}
+                onChange={(e) => setVoteOpponent(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white focus:border-red-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                Competição
+              </label>
+              <select
+                value={voteCompetition}
+                onChange={(e) => setVoteCompetition(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white focus:border-red-500 outline-none"
+              >
+                <option value="Liga Portugal">Liga Portugal</option>
+                <option value="Liga dos Campeões">Liga dos Campeões</option>
+                <option value="Liga Europa">Liga Europa</option>
+                <option value="Taça de Portugal">Taça de Portugal</option>
+                <option value="Taça da Liga">Taça da Liga</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
+              Quem jogou hoje? (Clica para ativar/desativar):
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
+              {players.map((p) => {
+                const checked = selectedIds.has(p.id);
+                const isCoach = p.position === 'TREINADOR';
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => togglePlayer(p.id)}
+                    className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all active:scale-95 ${
+                      checked
+                        ? isCoach
+                          ? 'bg-amber-600/30 border-amber-500 text-white'
+                          : 'bg-red-600/30 border-red-500 text-white'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                    }`}
+                  >
+                    <AdminPlayerAvatar src={p.photo_url} name={p.name} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold truncate text-white">{p.name}</p>
+                      <span className={`text-[9px] font-semibold ${checked ? 'text-zinc-200' : 'text-zinc-500'}`}>
+                        {p.position}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            onClick={handleOpenVoting}
+            disabled={voteLoading}
+            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-4 rounded-xl text-sm uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
+          >
+            {voteLoading ? 'A processar...' : 'Abrir Votação Agora'}
+          </button>
+        </div>
+      )}
+
+      {/* Feedback de Sucesso ou Erro */}
       {status && (
         <p
-          className={`text-center text-xs mt-3 font-bold ${
-            status.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'
+          className={`text-center text-xs mt-4 font-bold p-3 rounded-xl border ${
+            status.startsWith('✓')
+              ? 'text-emerald-400 bg-emerald-950/40 border-emerald-800/50'
+              : 'text-red-400 bg-red-950/40 border-red-800/50'
           }`}
         >
           {status}
