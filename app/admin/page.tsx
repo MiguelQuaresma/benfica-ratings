@@ -9,6 +9,15 @@ interface Player {
   photo_url: string;
 }
 
+interface Match {
+  id: string;
+  opponent: string;
+  competition: string;
+  date: string;
+  is_home: boolean;
+  is_open_for_voting: boolean;
+}
+
 const POSITION_ORDER: Record<string, number> = {
   'GR': 1,
   'DEF': 2,
@@ -51,7 +60,13 @@ function AdminPlayerAvatar({ src, name }: { src: string; name: string }) {
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'schedule' | 'open_voting'>('schedule');
+  const [tab, setTab] = useState<'manage' | 'schedule' | 'open_voting'>('manage');
+
+  // Estado Geral
+  const [activeMatch, setActiveMatch] = useState<Match | null>(null);
+  const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Estado para Agendar Próximo Jogo
   const [schedOpponent, setSchedOpponent] = useState('');
@@ -60,17 +75,48 @@ export default function AdminPage() {
   const [schedIsHome, setSchedIsHome] = useState(true);
   const [schedLoading, setSchedLoading] = useState(false);
 
-  // Estado para Abrir Votação Imediata
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Estado para Abrir Votação
+  const [voteMode, setVoteMode] = useState<'upcoming' | 'custom'>('upcoming');
   const [voteOpponent, setVoteOpponent] = useState('');
   const [voteCompetition, setVoteCompetition] = useState('Liga Portugal');
   const [voteIsHome, setVoteIsHome] = useState(true);
   const [voteLoading, setVoteLoading] = useState(false);
 
+  const [closingLoading, setClosingLoading] = useState(false);
   const [status, setStatus] = useState('');
 
+  const loadCurrentMatches = async () => {
+    // 1. Procurar jogo aberto
+    const { data: current } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('is_open_for_voting', true)
+      .limit(1)
+      .maybeSingle();
+
+    setActiveMatch(current as Match | null);
+
+    // 2. Procurar próximo agendado
+    const { data: next } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('is_open_for_voting', false)
+      .gte('date', new Date().toISOString())
+      .order('date', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    setUpcomingMatch(next as Match | null);
+    if (next) {
+      setVoteOpponent(next.opponent);
+      setVoteCompetition(next.competition);
+      setVoteIsHome(next.is_home !== false);
+    }
+  };
+
   useEffect(() => {
+    loadCurrentMatches();
+
     supabase
       .from('players')
       .select('*')
@@ -100,22 +146,45 @@ export default function AdminPage() {
     setSelectedIds(next);
   };
 
-  // 1. Agendar Próximo Jogo
+  // 1. Fechar Votação Ativa
+  const handleCloseVoting = async () => {
+    if (!activeMatch) return;
+    const confirmClose = window.confirm(`Tens a certeza que queres fechar as votações para vs ${activeMatch.opponent}?`);
+    if (!confirmClose) return;
+
+    setClosingLoading(true);
+    setStatus('A fechar votação...');
+
+    const { error } = await supabase
+      .from('matches')
+      .update({ is_open_for_voting: false })
+      .eq('id', activeMatch.id);
+
+    setClosingLoading(false);
+
+    if (error) {
+      setStatus('Erro ao fechar: ' + error.message);
+    } else {
+      setStatus(`✓ Votação do jogo vs ${activeMatch.opponent} encerrada e enviada para o arquivo!`);
+      await loadCurrentMatches();
+      setTab('manage');
+    }
+  };
+
+  // 2. Agendar Próximo Jogo
   const handleScheduleMatch = async () => {
     if (!schedOpponent.trim() || !schedDateTime) {
-      alert('Preenche o adversário e escolhe a data/hora do jogo.');
+      alert('Preenche o adversário e a data/hora.');
       return;
     }
 
     setSchedLoading(true);
-    setStatus('A agendar jogo...');
-
-    const isoDate = new Date(schedDateTime).toISOString();
+    setStatus('A agendar...');
 
     const { error } = await supabase.from('matches').insert({
       opponent: schedOpponent.trim(),
       competition: schedCompetition.trim(),
-      date: isoDate,
+      date: new Date(schedDateTime).toISOString(),
       is_home: schedIsHome,
       is_open_for_voting: false,
     });
@@ -123,50 +192,80 @@ export default function AdminPage() {
     setSchedLoading(false);
 
     if (error) {
-      setStatus('Erro ao agendar: ' + error.message);
+      setStatus('Erro: ' + error.message);
     } else {
-      const matchLabel = schedIsHome ? `SL Benfica vs ${schedOpponent}` : `${schedOpponent} vs SL Benfica`;
-      setStatus(`✓ Próximo jogo (${matchLabel}) agendado!`);
+      setStatus(`✓ Jogo vs ${schedOpponent} agendado no calendário!`);
       setSchedOpponent('');
       setSchedDateTime('');
+      await loadCurrentMatches();
+      setTab('manage');
     }
   };
 
-  // 2. Abrir Votação Imediata
+  // 3. Abrir Votação (usando o agendado ou teste/manual)
   const handleOpenVoting = async () => {
-    if (!voteOpponent.trim() || selectedIds.size === 0) {
-      alert('Preenche o adversário e seleciona pelo menos um jogador.');
+    const isUsingUpcoming = voteMode === 'upcoming' && upcomingMatch;
+    const targetOpponent = isUsingUpcoming ? upcomingMatch.opponent : voteOpponent.trim();
+    const targetCompetition = isUsingUpcoming ? upcomingMatch.competition : voteCompetition.trim();
+    const targetIsHome = isUsingUpcoming ? upcomingMatch.is_home !== false : voteIsHome;
+
+    if (!targetOpponent || selectedIds.size === 0) {
+      alert('Verifica o adversário e seleciona pelo menos um atleta que jogou.');
       return;
     }
 
     setVoteLoading(true);
-    setStatus('A publicar votação...');
+    setStatus('A abrir votação...');
 
+    // Fechar qualquer outro jogo que esteja aberto
     await supabase
       .from('matches')
       .update({ is_open_for_voting: false })
       .neq('id', '00000000-0000-0000-0000-000000000000');
 
-    const { data: match, error: matchErr } = await supabase
-      .from('matches')
-      .insert({
-        opponent: voteOpponent.trim(),
-        competition: voteCompetition.trim(),
-        date: new Date().toISOString(),
-        is_home: voteIsHome,
-        is_open_for_voting: true,
-      })
-      .select()
-      .single();
+    let matchId = '';
 
-    if (matchErr || !match) {
-      setStatus('Erro: ' + (matchErr?.message || 'Falha ao criar jogo'));
-      setVoteLoading(false);
-      return;
+    if (isUsingUpcoming) {
+      // Atualiza o jogo que já estava agendado para passar a "is_open_for_voting: true"
+      const { error: updErr } = await supabase
+        .from('matches')
+        .update({
+          is_open_for_voting: true,
+          date: new Date().toISOString(),
+        })
+        .eq('id', upcomingMatch.id);
+
+      if (updErr) {
+        setStatus('Erro ao ativar: ' + updErr.message);
+        setVoteLoading(false);
+        return;
+      }
+      matchId = upcomingMatch.id;
+    } else {
+      // Jogo manual ou de teste
+      const { data: newMatch, error: insErr } = await supabase
+        .from('matches')
+        .insert({
+          opponent: targetOpponent,
+          competition: targetCompetition,
+          date: new Date().toISOString(),
+          is_home: targetIsHome,
+          is_open_for_voting: true,
+        })
+        .select()
+        .single();
+
+      if (insErr || !newMatch) {
+        setStatus('Erro ao criar jogo: ' + insErr?.message);
+        setVoteLoading(false);
+        return;
+      }
+      matchId = newMatch.id;
     }
 
+    // Associa os jogadores que alinharam
     const lineups = Array.from(selectedIds).map((id) => ({
-      match_id: match.id,
+      match_id: matchId,
       player_id: id,
       is_starter: true,
     }));
@@ -175,29 +274,40 @@ export default function AdminPage() {
     setVoteLoading(false);
 
     if (lineErr) {
-      setStatus('Erro ao associar plantel: ' + lineErr.message);
+      setStatus('Erro nas notas: ' + lineErr.message);
     } else {
-      const matchLabel = voteIsHome ? `SL Benfica vs ${voteOpponent}` : `${voteOpponent} vs SL Benfica`;
-      setStatus(`✓ Votação aberta com sucesso (${matchLabel})!`);
-      setVoteOpponent('');
+      setStatus(`✓ Votação aberta com sucesso para vs ${targetOpponent}!`);
+      await loadCurrentMatches();
+      setTab('manage');
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-20">
-      <div className="pb-4 border-b border-zinc-800 mb-5">
-        <h1 className="text-lg font-black text-red-600 tracking-tight">ADMIN • GESTÃO DE JOGOS</h1>
-        <p className="text-xs text-zinc-400">Agendar partidas e abrir votações pós-jogo</p>
+    <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-24">
+      {/* Cabeçalho */}
+      <div className="pb-3 border-b border-zinc-800 mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-base font-black text-red-600 tracking-tight">ADMIN • BENFICAVOTE</h1>
+          <p className="text-[11px] text-zinc-400">Controlo de Jogos e Votações</p>
+        </div>
+        <a
+          href="/"
+          target="_blank"
+          className="text-[10px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1.5 rounded-lg text-zinc-300 border border-zinc-700"
+        >
+          Ver App ↗
+        </a>
       </div>
 
+      {/* Navegação entre Abas */}
       <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 mb-5">
         <button
-          onClick={() => { setTab('schedule'); setStatus(''); }}
+          onClick={() => { setTab('manage'); setStatus(''); }}
           className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-            tab === 'schedule' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
+            tab === 'manage' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
           }`}
         >
-          1. Agendar Próximo
+          Estado
         </button>
         <button
           onClick={() => { setTab('open_voting'); setStatus(''); }}
@@ -205,192 +315,193 @@ export default function AdminPage() {
             tab === 'open_voting' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
           }`}
         >
-          2. Abrir Votação
+          Abrir Voto
+        </button>
+        <button
+          onClick={() => { setTab('schedule'); setStatus(''); }}
+          className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+            tab === 'schedule' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          Agendar
         </button>
       </div>
 
-      {/* MODO 1: AGENDAR PRÓXIMO */}
-      {tab === 'schedule' && (
-        <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-5 rounded-2xl shadow-xl">
-          <div>
-            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest block mb-1">
-              Contagem Decrescente
+      {/* ABA 1: PAINEL DE ESTADO E FECHO DE VOTAÇÃO */}
+      {tab === 'manage' && (
+        <div className="space-y-4">
+          {/* Card Jogo Aberto */}
+          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
+              Votação Atual
             </span>
-            <h2 className="text-base font-black text-white">Marcar Próximo Encontro</h2>
-          </div>
+            {activeMatch ? (
+              <div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <h2 className="text-base font-black text-white">
+                    {activeMatch.is_home !== false ? `SL Benfica vs ${activeMatch.opponent}` : `${activeMatch.opponent} vs SL Benfica`}
+                  </h2>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">{activeMatch.competition}</p>
 
-          <div>
-            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-              Local do Encontro
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSchedIsHome(true)}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
-                  schedIsHome
-                    ? 'bg-red-600 border-red-500 text-white shadow'
-                    : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
-                }`}
-              >
-                🏠 Casa (Luz)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSchedIsHome(false)}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
-                  !schedIsHome
-                    ? 'bg-red-600 border-red-500 text-white shadow'
-                    : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
-                }`}
-              >
-                ✈️ Fora
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-              Adversário
-            </label>
-            <input
-              type="text"
-              placeholder="ex: FC Porto, Sporting CP, PSG..."
-              value={schedOpponent}
-              onChange={(e) => setSchedOpponent(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
-            />
-            {schedOpponent.trim() && (
-              <p className="text-[11px] text-zinc-400 mt-1 font-semibold">
-                Vai aparecer: <span className="text-white">{schedIsHome ? `SL Benfica vs ${schedOpponent}` : `${schedOpponent} vs SL Benfica`}</span>
+                <button
+                  onClick={handleCloseVoting}
+                  disabled={closingLoading}
+                  className="w-full mt-4 bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-800/80 font-black py-3 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  {closingLoading ? 'A fechar...' : '🔒 Fechar e Guardar no Histórico'}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-400 italic mt-1">
+                Nenhuma votação ativa de momento. Os adeptos estão a ver o próximo jogo agendado.
               </p>
             )}
           </div>
 
-          <div>
-            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-              Competição
-            </label>
-            <select
-              value={schedCompetition}
-              onChange={(e) => setSchedCompetition(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
-            >
-              <option value="Liga Portugal">Liga Portugal</option>
-              <option value="Liga dos Campeões">Liga dos Campeões</option>
-              <option value="Liga Europa">Liga Europa</option>
-              <option value="Taça de Portugal">Taça de Portugal</option>
-              <option value="Taça da Liga">Taça da Liga</option>
-            </select>
-          </div>
+          {/* Card Próximo Jogo Agendado */}
+          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
+              Próximo no Calendário
+            </span>
+            {upcomingMatch ? (
+              <div className="mt-1">
+                <h3 className="text-sm font-black text-white">
+                  {upcomingMatch.is_home !== false ? `SL Benfica vs ${upcomingMatch.opponent}` : `${upcomingMatch.opponent} vs SL Benfica`}
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  {upcomingMatch.competition} • {new Date(upcomingMatch.date).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })}
+                </p>
 
-          <div>
-            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-              Data e Hora de Início
-            </label>
-            <input
-              type="datetime-local"
-              value={schedDateTime}
-              onChange={(e) => setSchedDateTime(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"
-            />
+                <button
+                  onClick={() => {
+                    setVoteMode('upcoming');
+                    setTab('open_voting');
+                  }}
+                  className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer shadow"
+                >
+                  ⚡ Abrir Votação Deste Jogo
+                </button>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-zinc-400 italic mt-1">Sem jogos futuros agendados.</p>
+                <button
+                  onClick={() => setTab('schedule')}
+                  className="mt-2 text-xs font-bold text-red-400 underline cursor-pointer"
+                >
+                  + Agendar próximo jogo agora
+                </button>
+              </div>
+            )}
           </div>
-
-          <button
-            onClick={handleScheduleMatch}
-            disabled={schedLoading}
-            className="w-full mt-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
-          >
-            {schedLoading ? 'A agendar...' : 'Guardar no Calendário'}
-          </button>
         </div>
       )}
 
-      {/* MODO 2: ABRIR VOTAÇÃO */}
+      {/* ABA 2: ABRIR VOTAÇÃO */}
       {tab === 'open_voting' && (
         <div className="space-y-4">
-          <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">
-                Apito Final
-              </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 bg-red-600/20 text-red-400 border border-red-500/30 rounded-md">
-                {selectedIds.size} selecionados
-              </span>
+          {/* Seletor de Origem */}
+          {upcomingMatch && (
+            <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setVoteMode('upcoming')}
+                className={`flex-1 py-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  voteMode === 'upcoming' ? 'bg-zinc-800 text-white border border-zinc-700' : 'text-zinc-500'
+                }`}
+              >
+                Usar Agendado (vs {upcomingMatch.opponent})
+              </button>
+              <button
+                type="button"
+                onClick={() => setVoteMode('custom')}
+                className={`flex-1 py-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  voteMode === 'custom' ? 'bg-zinc-800 text-white border border-zinc-700' : 'text-zinc-500'
+                }`}
+              >
+                Manual / Teste
+              </button>
             </div>
+          )}
 
-            <div>
-              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-                Local do Encontro
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setVoteIsHome(true)}
-                  className={`py-2 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
-                    voteIsHome
-                      ? 'bg-red-600 border-red-500 text-white shadow'
-                      : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
-                  }`}
+          {/* Dados do Jogo */}
+          {voteMode === 'upcoming' && upcomingMatch ? (
+            <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-xl">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Jogo a publicar:</span>
+              <p className="text-sm font-black text-white mt-0.5">
+                {upcomingMatch.is_home !== false ? `SL Benfica vs ${upcomingMatch.opponent}` : `${upcomingMatch.opponent} vs SL Benfica`}
+              </p>
+              <span className="text-[10px] text-red-400 font-bold">{upcomingMatch.competition}</span>
+            </div>
+          ) : (
+            <div className="bg-zinc-900 border border-zinc-800 p-3.5 rounded-xl space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Local</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setVoteIsHome(true)}
+                    className={`py-1.5 rounded-lg text-xs font-black uppercase border ${
+                      voteIsHome ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    Casa (Luz)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVoteIsHome(false)}
+                    className={`py-1.5 rounded-lg text-xs font-black uppercase border ${
+                      !voteIsHome ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    Fora
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Adversário</label>
+                <input
+                  type="text"
+                  placeholder="ex: FC Porto ou Teste Amigável"
+                  value={voteOpponent}
+                  onChange={(e) => setVoteOpponent(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-xs text-white outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Competição</label>
+                <select
+                  value={voteCompetition}
+                  onChange={(e) => setVoteCompetition(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-xs text-white outline-none"
                 >
-                  🏠 Casa (Luz)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoteIsHome(false)}
-                  className={`py-2 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
-                    !voteIsHome
-                      ? 'bg-red-600 border-red-500 text-white shadow'
-                      : 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
-                  }`}
-                >
-                  ✈️ Fora
-                </button>
+                  <option value="Liga Portugal">Liga Portugal</option>
+                  <option value="Liga dos Campeões">Liga dos Campeões</option>
+                  <option value="Taça de Portugal">Taça de Portugal</option>
+                  <option value="Taça da Liga">Taça da Liga</option>
+                  <option value="Jogo de Treino / Teste">Jogo de Treino / Teste</option>
+                </select>
               </div>
             </div>
+          )}
 
-            <div>
-              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-                Adversário
-              </label>
-              <input
-                type="text"
-                placeholder="ex: FC Porto, Gil Vicente..."
-                value={voteOpponent}
-                onChange={(e) => setVoteOpponent(e.target.value)}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white focus:border-red-500 outline-none"
-              />
-              {voteOpponent.trim() && (
-                <p className="text-[11px] text-zinc-400 mt-1 font-semibold">
-                  Vai aparecer: <span className="text-white">{voteIsHome ? `SL Benfica vs ${voteOpponent}` : `${voteOpponent} vs SL Benfica`}</span>
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-                Competição
-              </label>
-              <select
-                value={voteCompetition}
-                onChange={(e) => setVoteCompetition(e.target.value)}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white focus:border-red-500 outline-none"
-              >
-                <option value="Liga Portugal">Liga Portugal</option>
-                <option value="Liga dos Campeões">Liga dos Campeões</option>
-                <option value="Liga Europa">Liga Europa</option>
-                <option value="Taça de Portugal">Taça de Portugal</option>
-                <option value="Taça da Liga">Taça da Liga</option>
-              </select>
-            </div>
-          </div>
-
+          {/* Seleção do 11 + Suplentes */}
           <div>
-            <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-              Quem jogou hoje? (Clica para selecionar):
-            </p>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                Quem jogou? (Clica para selecionar)
+              </span>
+              <span className="text-[10px] font-black text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-900/50">
+                {selectedIds.size} convocados
+              </span>
+            </div>
 
-            <div className="grid grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-1">
               {players.map((p) => {
                 const checked = selectedIds.has(p.id);
                 const isCoach = p.position === 'TREINADOR';
@@ -400,12 +511,12 @@ export default function AdminPage() {
                     key={p.id}
                     type="button"
                     onClick={() => togglePlayer(p.id)}
-                    className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all active:scale-95 ${
+                    className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all active:scale-95 cursor-pointer ${
                       checked
                         ? isCoach
                           ? 'bg-amber-600/30 border-amber-500 text-white'
                           : 'bg-red-600/30 border-red-500 text-white'
-                        : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                        : 'bg-zinc-900 border-zinc-800/80 text-zinc-400'
                     }`}
                   >
                     <AdminPlayerAvatar src={p.photo_url} name={p.name} />
@@ -424,13 +535,94 @@ export default function AdminPage() {
           <button
             onClick={handleOpenVoting}
             disabled={voteLoading}
-            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-4 rounded-xl text-sm uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
+            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
           >
-            {voteLoading ? 'A processar...' : 'Abrir Votação Agora'}
+            {voteLoading ? 'A publicar...' : '🚀 Lançar Votação Imediata'}
           </button>
         </div>
       )}
 
+      {/* ABA 3: AGENDAR PRÓXIMO */}
+      {tab === 'schedule' && (
+        <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl shadow-xl">
+          <div>
+            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest block mb-1">
+              Contagem Decrescente
+            </span>
+            <h2 className="text-sm font-black text-white">Marcar Próximo no Calendário</h2>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Local</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSchedIsHome(true)}
+                className={`py-2 rounded-xl border text-xs font-black uppercase ${
+                  schedIsHome ? 'bg-red-600 border-red-500 text-white shadow' : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                🏠 Casa (Luz)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSchedIsHome(false)}
+                className={`py-2 rounded-xl border text-xs font-black uppercase ${
+                  !schedIsHome ? 'bg-red-600 border-red-500 text-white shadow' : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                ✈️ Fora
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Adversário</label>
+            <input
+              type="text"
+              placeholder="ex: Sporting CP, FC Porto, Juventus..."
+              value={schedOpponent}
+              onChange={(e) => setSchedOpponent(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-xs text-white focus:border-red-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Competição</label>
+            <select
+              value={schedCompetition}
+              onChange={(e) => setSchedCompetition(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-xs text-white focus:border-red-500 outline-none"
+            >
+              <option value="Liga Portugal">Liga Portugal</option>
+              <option value="Liga dos Campeões">Liga dos Campeões</option>
+              <option value="Liga Europa">Liga Europa</option>
+              <option value="Taça de Portugal">Taça de Portugal</option>
+              <option value="Taça da Liga">Taça da Liga</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Data e Hora de Início</label>
+            <input
+              type="datetime-local"
+              value={schedDateTime}
+              onChange={(e) => setSchedDateTime(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-xs text-white focus:border-red-500 outline-none"
+            />
+          </div>
+
+          <button
+            onClick={handleScheduleMatch}
+            disabled={schedLoading}
+            className="w-full mt-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg transition-transform active:scale-98 cursor-pointer"
+          >
+            {schedLoading ? 'A guardar...' : 'Guardar Calendário'}
+          </button>
+        </div>
+      )}
+
+      {/* Mensagens de Feedback */}
       {status && (
         <p
           className={`text-center text-xs mt-4 font-bold p-3 rounded-xl border ${
