@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { toBlob } from 'html-to-image';
 import { supabase } from '@/lib/supabase';
 
 interface Match {
@@ -84,6 +85,7 @@ function PlayerAvatar({ src, name, isCoach = false }: { src: string; name: strin
       src={src}
       alt={name}
       referrerPolicy="no-referrer"
+      crossOrigin="anonymous"
       loading="lazy"
       onError={() => setHasError(true)}
       className="w-full h-full object-cover object-top"
@@ -91,7 +93,6 @@ function PlayerAvatar({ src, name, isCoach = false }: { src: string; name: strin
   );
 }
 
-// Devolve o texto correto respeitando Casa ou Fora
 function formatMatchTitle(match: Match) {
   const isHome = match.is_home !== false;
   return isHome ? `SL Benfica vs ${match.opponent}` : `${match.opponent} vs SL Benfica`;
@@ -108,11 +109,12 @@ export default function Home() {
   const [view, setView] = useState<'vote' | 'results' | 'history'>('vote');
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
-  const [copied, setCopied] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
+
+  const shareCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function loadData() {
-      // 1. Procurar jogo ativo para votação
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -146,7 +148,6 @@ export default function Home() {
         setView('history');
       }
 
-      // 2. Procurar o próximo jogo futuro agendado
       const { data: next } = await supabase
         .from('matches')
         .select('*')
@@ -209,6 +210,9 @@ export default function Home() {
   }
 
   const handleScore = (id: string, score: number) => {
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(10);
+    }
     setRatings((prev) => ({ ...prev, [id]: score }));
   };
 
@@ -241,32 +245,48 @@ export default function Home() {
     setView('results');
   };
 
+  const handleGenerateStoryImage = async () => {
+    if (!shareCardRef.current) return;
+    setGeneratingImage(true);
+
+    try {
+      const blob = await toBlob(shareCardRef.current, {
+        quality: 0.95,
+        cacheBust: true,
+        pixelRatio: 2,
+      });
+
+      if (!blob) throw new Error('Falha ao renderizar imagem.');
+
+      const file = new File([blob], `benficavote-${Date.now()}.png`, { type: 'image/png' });
+
+      // Se suportar partilha nativa com ficheiro de imagem no telemóvel
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'BenficaVote • Avaliações',
+          text: `Notas dos adeptos para o jogo do Glorioso! #SLBenfica`,
+        });
+      } else {
+        // Fallback: faz o download direto da imagem PNG
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `BenficaVote-${activeMatch?.opponent || 'Ratings'}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Não foi possível gerar a imagem no dispositivo.');
+    } finally {
+      setGeneratingImage(false);
+    }
+  };
+
   const motm = stats.find((s) => s.position !== 'TREINADOR');
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
-
-  const handleShare = async () => {
-    const matchTitle = activeMatch ? formatMatchTitle(activeMatch) : 'último encontro';
-    const topPlayerText = motm && Number(motm.avg_score) > 0 ? `★ MVP: ${motm.player_name} (${motm.avg_score}/10)\n` : '';
-    const shareText = `Avaliação do ${matchTitle} no BenficaVote!\n${topPlayerText}Vota ou consulta as notas: ${window.location.origin}`;
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'BenficaVote • Avaliações',
-          text: shareText,
-          url: window.location.origin,
-        });
-        return;
-      } catch (e) {
-        // Fallback
-      }
-    }
-
-    navigator.clipboard.writeText(shareText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-28 selection:bg-red-600 selection:text-white">
@@ -296,7 +316,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* PRÓXIMO JOGO COM CONTAGEM DECRESCENTE */}
+        {/* Próximo Jogo */}
         {upcomingMatch && (
           <div className="mb-4 p-5 rounded-3xl bg-gradient-to-b from-[#18181c] to-[#101013] border border-zinc-800/90 text-center shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-center gap-2 mb-2">
@@ -327,7 +347,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Separadores */}
+        {/* Separadores de Navegação */}
         <div className="flex bg-zinc-900/90 p-1.5 rounded-2xl border border-zinc-800 mb-4 shadow-inner">
           {activeMatch && (
             <>
@@ -478,7 +498,7 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS */}
+        {/* VISTA 2: RESULTADOS COM GERADOR VISUAL */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
             {motm && Number(motm.avg_score) > 0 && (
@@ -500,16 +520,19 @@ export default function Home() {
               </div>
             )}
 
+            {/* BOTÃO GERAR IMAGEM PARA STORIES / TWITTER */}
             <button
-              onClick={handleShare}
-              className="w-full bg-zinc-900/90 hover:bg-zinc-800 text-white font-black py-3.5 px-4 rounded-2xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2.5 transition-all active:scale-98 shadow-md cursor-pointer"
+              onClick={handleGenerateStoryImage}
+              disabled={generatingImage}
+              className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:opacity-50 text-white font-black py-4 px-4 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-[0_4px_20px_rgba(220,38,38,0.4)] transition-all active:scale-98 cursor-pointer"
             >
-              <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              {copied ? '✓ Link copiado para partilhar!' : 'Partilhar Médias nas Redes'}
+              {generatingImage ? 'A desenhar imagem...' : '📸 Gerar Cartão p/ Stories / X'}
             </button>
 
+            {/* Lista com as Médias normais */}
             <div className="space-y-2">
               {stats.map((s, idx) => (
                 <div
@@ -613,6 +636,120 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* =========================================================================
+          CARTÃO SOCIAL 1080x1920 (Formato Stories) RENDERIZADO FORA DO ECRÃ
+          ========================================================================= */}
+      {activeMatch && (
+        <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+          <div
+            ref={shareCardRef}
+            style={{
+              width: '540px',
+              minHeight: '960px',
+              backgroundColor: '#09090b',
+              color: '#ffffff',
+              padding: '36px 28px',
+              fontFamily: 'sans-serif',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.3) 0%, #09090b 70%)',
+            }}
+          >
+            {/* Cabeçalho do Cartão */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+                <div>
+                  <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '-0.5px' }}>
+                    BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Avaliações dos Adeptos
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 900, textTransform: 'uppercase' }}>
+                  {activeMatch.competition}
+                </div>
+                <div style={{ fontSize: '15px', fontWeight: 900 }}>
+                  {formatMatchTitle(activeMatch)}
+                </div>
+              </div>
+            </div>
+
+            {/* MVP em Destaque */}
+            {motm && (
+              <div style={{ margin: '20px 0', padding: '16px 20px', backgroundColor: '#18181b', borderRadius: '20px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <img
+                    src={motm.photo_url}
+                    alt={motm.player_name}
+                    crossOrigin="anonymous"
+                    style={{ width: '56px', height: '56px', borderRadius: '16px', objectFit: 'cover' }}
+                  />
+                  <div>
+                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      ★ Homem do Jogo
+                    </span>
+                    <div style={{ fontSize: '18px', fontWeight: 900 }}>{motm.player_name}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '32px', fontWeight: 900, color: '#ef4444' }}>{motm.avg_score}</span>
+                  <span style={{ fontSize: '14px', color: '#71717a', fontWeight: 700 }}> /10</span>
+                </div>
+              </div>
+            )}
+
+            {/* Grid com Notas de Todo o Plantel */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', flex: 1 }}>
+              {stats.map((s) => (
+                <div
+                  key={s.player_id}
+                  style={{
+                    backgroundColor: '#121215',
+                    border: '1px solid #27272a',
+                    borderRadius: '12px',
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                    <img
+                      src={s.photo_url}
+                      alt={s.player_name}
+                      crossOrigin="anonymous"
+                      style={{ width: '28px', height: '28px', borderRadius: '8px', objectFit: 'cover' }}
+                    />
+                    <span style={{ fontSize: '12px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
+                      {s.player_name}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '15px', fontWeight: 900, color: '#ef4444' }}>
+                    {s.avg_score}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Rodapé com Link da App */}
+            <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#71717a', fontWeight: 600 }}>
+                Dá a tua nota após o apito final
+              </span>
+              <span style={{ fontSize: '12px', color: '#ffffff', fontWeight: 900, letterSpacing: '0.5px' }}>
+                benficavote.vercel.app
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
