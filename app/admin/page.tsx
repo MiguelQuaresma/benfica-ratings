@@ -60,15 +60,19 @@ function AdminPlayerAvatar({ src, name }: { src: string; name: string }) {
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'manage' | 'schedule' | 'open_voting'>('manage');
+  // Autenticação com PIN
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
 
-  // Estado Geral
+  // Estados do Admin
+  const [tab, setTab] = useState<'manage' | 'schedule' | 'open_voting'>('manage');
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Estado para Agendar Próximo Jogo
+  // Estado para Agendar
   const [schedOpponent, setSchedOpponent] = useState('');
   const [schedCompetition, setSchedCompetition] = useState('Liga Portugal');
   const [schedDateTime, setSchedDateTime] = useState('');
@@ -85,8 +89,33 @@ export default function AdminPage() {
   const [closingLoading, setClosingLoading] = useState(false);
   const [status, setStatus] = useState('');
 
+  useEffect(() => {
+    if (sessionStorage.getItem('admin_unlocked') === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetPin = process.env.NEXT_PUBLIC_ADMIN_PIN || '1904';
+
+    if (pinInput.trim() === targetPin.trim()) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('admin_unlocked', 'true');
+      setPinError(false);
+    } else {
+      setPinError(true);
+      setPinInput('');
+    }
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('admin_unlocked');
+    setIsAuthenticated(false);
+    setPinInput('');
+  };
+
   const loadCurrentMatches = async () => {
-    // 1. Procurar jogo aberto
     const { data: current } = await supabase
       .from('matches')
       .select('*')
@@ -96,7 +125,6 @@ export default function AdminPage() {
 
     setActiveMatch(current as Match | null);
 
-    // 2. Procurar próximo agendado
     const { data: next } = await supabase
       .from('matches')
       .select('*')
@@ -115,6 +143,8 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     loadCurrentMatches();
 
     supabase
@@ -134,7 +164,7 @@ export default function AdminPage() {
           setPlayers(sorted);
         }
       });
-  }, []);
+  }, [isAuthenticated]);
 
   const togglePlayer = (id: string) => {
     const next = new Set(selectedIds);
@@ -146,14 +176,13 @@ export default function AdminPage() {
     setSelectedIds(next);
   };
 
-  // 1. Fechar Votação Ativa
   const handleCloseVoting = async () => {
     if (!activeMatch) return;
-    const confirmClose = window.confirm(`Tens a certeza que queres fechar as votações para vs ${activeMatch.opponent}?`);
+    const confirmClose = window.confirm(`Encerrar a votação contra ${activeMatch.opponent}?`);
     if (!confirmClose) return;
 
     setClosingLoading(true);
-    setStatus('A fechar votação...');
+    setStatus('A encerrar a votação...');
 
     const { error } = await supabase
       .from('matches')
@@ -165,16 +194,15 @@ export default function AdminPage() {
     if (error) {
       setStatus('Erro ao fechar: ' + error.message);
     } else {
-      setStatus(`✓ Votação do jogo vs ${activeMatch.opponent} encerrada e enviada para o arquivo!`);
+      setStatus(`✓ Votação contra ${activeMatch.opponent} encerrada!`);
       await loadCurrentMatches();
       setTab('manage');
     }
   };
 
-  // 2. Agendar Próximo Jogo
   const handleScheduleMatch = async () => {
     if (!schedOpponent.trim() || !schedDateTime) {
-      alert('Preenche o adversário e a data/hora.');
+      alert('Indica o adversário e a data/hora.');
       return;
     }
 
@@ -194,7 +222,7 @@ export default function AdminPage() {
     if (error) {
       setStatus('Erro: ' + error.message);
     } else {
-      setStatus(`✓ Jogo vs ${schedOpponent} agendado no calendário!`);
+      setStatus(`✓ Jogo contra ${schedOpponent} agendado!`);
       setSchedOpponent('');
       setSchedDateTime('');
       await loadCurrentMatches();
@@ -202,7 +230,6 @@ export default function AdminPage() {
     }
   };
 
-  // 3. Abrir Votação (usando o agendado ou teste/manual)
   const handleOpenVoting = async () => {
     const isUsingUpcoming = voteMode === 'upcoming' && upcomingMatch;
     const targetOpponent = isUsingUpcoming ? upcomingMatch.opponent : voteOpponent.trim();
@@ -210,14 +237,13 @@ export default function AdminPage() {
     const targetIsHome = isUsingUpcoming ? upcomingMatch.is_home !== false : voteIsHome;
 
     if (!targetOpponent || selectedIds.size === 0) {
-      alert('Verifica o adversário e seleciona pelo menos um atleta que jogou.');
+      alert('Verifica o adversário e escolhe pelo menos um jogador convocado.');
       return;
     }
 
     setVoteLoading(true);
-    setStatus('A abrir votação...');
+    setStatus('A publicar votação...');
 
-    // Fechar qualquer outro jogo que esteja aberto
     await supabase
       .from('matches')
       .update({ is_open_for_voting: false })
@@ -226,7 +252,6 @@ export default function AdminPage() {
     let matchId = '';
 
     if (isUsingUpcoming) {
-      // Atualiza o jogo que já estava agendado para passar a "is_open_for_voting: true"
       const { error: updErr } = await supabase
         .from('matches')
         .update({
@@ -242,7 +267,6 @@ export default function AdminPage() {
       }
       matchId = upcomingMatch.id;
     } else {
-      // Jogo manual ou de teste
       const { data: newMatch, error: insErr } = await supabase
         .from('matches')
         .insert({
@@ -263,7 +287,6 @@ export default function AdminPage() {
       matchId = newMatch.id;
     }
 
-    // Associa os jogadores que alinharam
     const lineups = Array.from(selectedIds).map((id) => ({
       match_id: matchId,
       player_id: id,
@@ -274,32 +297,79 @@ export default function AdminPage() {
     setVoteLoading(false);
 
     if (lineErr) {
-      setStatus('Erro nas notas: ' + lineErr.message);
+      setStatus('Erro ao associar plantel: ' + lineErr.message);
     } else {
-      setStatus(`✓ Votação aberta com sucesso para vs ${targetOpponent}!`);
+      setStatus(`✓ Votação aberta para ${targetOpponent}!`);
       await loadCurrentMatches();
       setTab('manage');
     }
   };
 
+  // Ecrã de bloqueio por PIN
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center p-4 font-sans">
+        <form
+          onSubmit={handleUnlock}
+          className="w-full max-w-xs bg-zinc-900/90 border border-zinc-800 p-6 rounded-3xl shadow-2xl text-center space-y-4"
+        >
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-red-950/60 border border-red-900/60 flex items-center justify-center text-xl">
+            🔒
+          </div>
+          <div>
+            <h2 className="text-base font-black text-white uppercase tracking-tight">Área Restrita</h2>
+            <p className="text-xs text-zinc-400 mt-0.5">Insere o código de administrador</p>
+          </div>
+
+          <input
+            type="password"
+            placeholder="PIN"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            className="w-full bg-zinc-800 border border-zinc-700 text-center tracking-widest text-lg text-white rounded-xl p-3 outline-none focus:border-red-500"
+            autoFocus
+          />
+
+          {pinError && (
+            <p className="text-[11px] text-red-400 font-bold">Código incorreto. Tenta novamente.</p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow"
+          >
+            Entrar
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  // Painel Desbloqueado
   return (
     <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-24">
-      {/* Cabeçalho */}
       <div className="pb-3 border-b border-zinc-800 mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-base font-black text-red-600 tracking-tight">ADMIN • BENFICAVOTE</h1>
           <p className="text-[11px] text-zinc-400">Controlo de Jogos e Votações</p>
         </div>
-        <a
-          href="/"
-          target="_blank"
-          className="text-[10px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1.5 rounded-lg text-zinc-300 border border-zinc-700"
-        >
-          Ver App ↗
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href="/"
+            target="_blank"
+            className="text-[10px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1.5 rounded-lg text-zinc-300 border border-zinc-700"
+          >
+            Ver App ↗
+          </a>
+          <button
+            onClick={handleLogout}
+            className="text-[10px] font-bold uppercase tracking-wider bg-red-950/60 hover:bg-red-900/60 px-2.5 py-1.5 rounded-lg text-red-400 border border-red-800/60 cursor-pointer"
+          >
+            Sair
+          </button>
+        </div>
       </div>
 
-      {/* Navegação entre Abas */}
       <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 mb-5">
         <button
           onClick={() => { setTab('manage'); setStatus(''); }}
@@ -327,10 +397,8 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* ABA 1: PAINEL DE ESTADO E FECHO DE VOTAÇÃO */}
       {tab === 'manage' && (
         <div className="space-y-4">
-          {/* Card Jogo Aberto */}
           <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
               Votação Atual
@@ -356,12 +424,11 @@ export default function AdminPage() {
               </div>
             ) : (
               <p className="text-xs text-zinc-400 italic mt-1">
-                Nenhuma votação ativa de momento. Os adeptos estão a ver o próximo jogo agendado.
+                Nenhuma votação ativa de momento.
               </p>
             )}
           </div>
 
-          {/* Card Próximo Jogo Agendado */}
           <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
               Próximo no Calendário
@@ -387,12 +454,12 @@ export default function AdminPage() {
               </div>
             ) : (
               <div>
-                <p className="text-xs text-zinc-400 italic mt-1">Sem jogos futuros agendados.</p>
+                <p className="text-xs text-zinc-400 italic mt-1">Sem jogos agendados.</p>
                 <button
                   onClick={() => setTab('schedule')}
                   className="mt-2 text-xs font-bold text-red-400 underline cursor-pointer"
                 >
-                  + Agendar próximo jogo agora
+                  + Agendar próximo jogo
                 </button>
               </div>
             )}
@@ -400,10 +467,8 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ABA 2: ABRIR VOTAÇÃO */}
       {tab === 'open_voting' && (
         <div className="space-y-4">
-          {/* Seletor de Origem */}
           {upcomingMatch && (
             <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800">
               <button
@@ -427,7 +492,6 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* Dados do Jogo */}
           {voteMode === 'upcoming' && upcomingMatch ? (
             <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-xl">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Jogo a publicar:</span>
@@ -490,7 +554,6 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* Seleção do 11 + Suplentes */}
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
@@ -542,7 +605,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ABA 3: AGENDAR PRÓXIMO */}
       {tab === 'schedule' && (
         <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl shadow-xl">
           <div>
@@ -580,7 +642,7 @@ export default function AdminPage() {
             <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Adversário</label>
             <input
               type="text"
-              placeholder="ex: Sporting CP, FC Porto, Juventus..."
+              placeholder="ex: Sporting CP, FC Porto, PSG..."
               value={schedOpponent}
               onChange={(e) => setSchedOpponent(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-xs text-white focus:border-red-500 outline-none"
@@ -596,7 +658,6 @@ export default function AdminPage() {
             >
               <option value="Liga Portugal">Liga Portugal</option>
               <option value="Liga dos Campeões">Liga dos Campeões</option>
-              <option value="Liga Europa">Liga Europa</option>
               <option value="Taça de Portugal">Taça de Portugal</option>
               <option value="Taça da Liga">Taça da Liga</option>
             </select>
@@ -622,7 +683,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Mensagens de Feedback */}
       {status && (
         <p
           className={`text-center text-xs mt-4 font-bold p-3 rounded-xl border ${
