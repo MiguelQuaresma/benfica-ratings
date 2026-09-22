@@ -48,12 +48,50 @@ const POSITION_ORDER: Record<string, number> = {
 
 const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp";
 
+// Cores dinâmicas inspiradas no ThePlayerRatings / SofaScore
+function getScoreTheme(score: number) {
+  if (score >= 8.5) {
+    return {
+      bg: 'bg-emerald-500/20',
+      border: 'border-emerald-500',
+      text: 'text-emerald-400',
+      glow: 'shadow-[0_0_12px_rgba(16,185,129,0.45)]',
+      pill: 'bg-emerald-500 text-black',
+    };
+  }
+  if (score >= 7.0) {
+    return {
+      bg: 'bg-teal-500/20',
+      border: 'border-teal-500',
+      text: 'text-teal-400',
+      glow: 'shadow-[0_0_10px_rgba(20,184,166,0.35)]',
+      pill: 'bg-teal-500 text-black',
+    };
+  }
+  if (score >= 5.0) {
+    return {
+      bg: 'bg-amber-500/20',
+      border: 'border-amber-500',
+      text: 'text-amber-400',
+      glow: 'shadow-[0_0_10px_rgba(245,158,11,0.3)]',
+      pill: 'bg-amber-500 text-black',
+    };
+  }
+  return {
+    bg: 'bg-rose-500/20',
+    border: 'border-rose-600',
+    text: 'text-rose-400',
+    glow: 'shadow-[0_0_10px_rgba(225,29,72,0.3)]',
+    pill: 'bg-rose-600 text-white',
+  };
+}
+
 function BenficaEmblem({ className = "w-8 h-8" }: { className?: string }) {
   return (
     <img
       src={BENFICA_LOGO_URL}
       alt="Sport Lisboa e Benfica"
-      className={`${className} object-contain drop-shadow-[0_2px_10px_rgba(220,38,38,0.45)]`}
+      className={`${className} object-contain drop-shadow-[0_2px_10px_rgba(220,38,38,0.4)]`}
       loading="eager"
     />
   );
@@ -260,7 +298,6 @@ export default function Home() {
 
       const file = new File([blob], `benficavote-${Date.now()}.png`, { type: 'image/png' });
 
-      // Se suportar partilha nativa com ficheiro de imagem no telemóvel
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
@@ -268,7 +305,6 @@ export default function Home() {
           text: `Notas dos adeptos para o jogo do Glorioso! #SLBenfica`,
         });
       } else {
-        // Fallback: faz o download direto da imagem PNG
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -288,10 +324,17 @@ export default function Home() {
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
+  // Cálculo da Média Coletiva da Equipa
+  const teamAverage = stats.length > 0
+    ? (stats.reduce((acc, curr) => acc + Number(curr.avg_score), 0) / stats.length).toFixed(1)
+    : '0.0';
+
+  const teamTheme = getScoreTheme(Number(teamAverage));
+
   return (
-    <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-28 selection:bg-red-600 selection:text-white">
-      {/* Topo Fixo */}
-      <header className="border-b border-zinc-800/80 bg-[#121214]/90 backdrop-blur-md sticky top-0 z-50">
+    <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16 selection:bg-red-600 selection:text-white">
+      {/* Topo Glassmorphism */}
+      <header className="border-b border-zinc-800/80 bg-[#101013]/90 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <BenficaEmblem className="w-8 h-8" />
@@ -305,7 +348,7 @@ export default function Home() {
           {activeMatch ? (
             <div className="flex items-center gap-1.5 bg-red-950/80 text-red-400 border border-red-800/60 px-2.5 py-1 rounded-full shadow-[0_0_12px_rgba(220,38,38,0.2)]">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-              <span className="text-[10px] font-black uppercase tracking-wider">Em Aberto</span>
+              <span className="text-[10px] font-black uppercase tracking-wider">Votação Aberta</span>
             </div>
           ) : (
             <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-800/60 px-2.5 py-1 rounded-lg border border-zinc-700/60">
@@ -316,9 +359,9 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Próximo Jogo */}
+        {/* Próximo Jogo com Cronómetro */}
         {upcomingMatch && (
-          <div className="mb-4 p-5 rounded-3xl bg-gradient-to-b from-[#18181c] to-[#101013] border border-zinc-800/90 text-center shadow-xl relative overflow-hidden">
+          <div className="mb-4 p-5 rounded-3xl bg-gradient-to-b from-[#16161a] to-[#0f0f12] border border-zinc-800/90 text-center shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-center gap-2 mb-2">
               <BenficaEmblem className="w-5 h-5" />
               <span className="text-[10px] font-black tracking-widest text-red-500 uppercase bg-red-950/60 px-2.5 py-0.5 rounded-full border border-red-900/50">
@@ -347,7 +390,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Separadores de Navegação */}
+        {/* Abas de Navegação */}
         <div className="flex bg-zinc-900/90 p-1.5 rounded-2xl border border-zinc-800 mb-4 shadow-inner">
           {activeMatch && (
             <>
@@ -405,7 +448,7 @@ export default function Home() {
 
             <div className="mb-4 px-1">
               <div className="flex justify-between text-[11px] font-bold text-zinc-400 mb-1.5">
-                <span>Progresso do teu voto</span>
+                <span>Progresso das tuas notas</span>
                 <span className="text-red-400">{Math.round(progressPercent)}%</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -420,15 +463,14 @@ export default function Home() {
               {players.map((p) => {
                 const currentScore = ratings[p.id];
                 const isCoach = p.position === 'TREINADOR';
+                const theme = currentScore ? getScoreTheme(currentScore) : null;
 
                 return (
                   <div
                     key={p.id}
                     className={`relative overflow-hidden rounded-2xl border transition-all duration-200 ${
                       currentScore
-                        ? isCoach
-                          ? 'border-amber-500/80 bg-gradient-to-r from-[#171512] via-[#1b1713] to-amber-950/20 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
-                          : 'border-red-600/80 bg-gradient-to-r from-[#181214] via-[#161214] to-red-950/30 shadow-[0_0_15px_rgba(220,38,38,0.15)]'
+                        ? `${theme?.border} ${theme?.bg}${theme?.glow}`
                         : 'border-zinc-800/80 bg-[#121215]/90 hover:border-zinc-700'
                     }`}
                   >
@@ -454,11 +496,9 @@ export default function Home() {
                         </h3>
                       </div>
 
-                      <div className={`w-11 h-11 rounded-2xl border flex items-center justify-center flex-shrink-0 ${
+                      <div className={`w-11 h-11 rounded-2xl border flex items-center justify-center flex-shrink-0 transition-all ${
                         currentScore
-                          ? isCoach
-                            ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
-                            : 'bg-red-600/20 border-red-600 text-red-500 shadow-[0_0_10px_rgba(220,38,38,0.3)]'
+                          ? `${theme?.bg}${theme?.border} ${theme?.text}${theme?.glow}`
                           : 'bg-black/40 border-zinc-800 text-zinc-600'
                       }`}>
                         <span className="text-lg font-black">{currentScore || '—'}</span>
@@ -466,21 +506,24 @@ export default function Home() {
                     </div>
 
                     <div className="px-3 pb-3 pt-1 border-t border-zinc-800/50 grid grid-cols-10 gap-1">
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                        <button
-                          key={num}
-                          onClick={() => handleScore(p.id, num)}
-                          className={`py-2 rounded-lg text-xs font-black transition-all active:scale-90 cursor-pointer ${
-                            currentScore === num
-                              ? isCoach
-                                ? 'bg-amber-500 text-black shadow-[0_0_10px_#f59e0b]'
-                                : 'bg-red-600 text-white shadow-[0_0_10px_#dc2626]'
-                              : 'bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                        const btnTheme = getScoreTheme(num);
+                        const isSelected = currentScore === num;
+
+                        return (
+                          <button
+                            key={num}
+                            onClick={() => handleScore(p.id, num)}
+                            className={`py-2 rounded-lg text-xs font-black transition-all active:scale-90 cursor-pointer ${
+                              isSelected
+                                ? `${btnTheme.pill}${btnTheme.glow} shadow-md`
+                                : 'bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -498,9 +541,26 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS COM GERADOR VISUAL */}
+        {/* VISTA 2: RESULTADOS (ESTILO THE PLAYER RATINGS) */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
+            {/* Média Global da Equipa */}
+            {stats.length > 0 && (
+              <div className={`p-4 rounded-2xl border ${teamTheme.border} ${teamTheme.bg} flex items-center justify-between shadow-lg`}>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 block">
+                    Exibição Coletiva
+                  </span>
+                  <h3 className="text-sm font-black text-white">Média Global da Equipa</h3>
+                </div>
+                <div className="text-right">
+                  <span className={`text-3xl font-black ${teamTheme.text}`}>{teamAverage}</span>
+                  <span className="text-xs text-zinc-400 font-bold"> /10</span>
+                </div>
+              </div>
+            )}
+
+            {/* MVP Homem do Jogo */}
             {motm && Number(motm.avg_score) > 0 && (
               <div className="relative overflow-hidden p-6 rounded-3xl bg-gradient-to-br from-[#2a1012] via-[#1a1215] to-[#111114] border-2 border-red-500/80 shadow-[0_0_30px_rgba(220,38,38,0.3)] text-center">
                 <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/15 px-3 py-1 rounded-full border border-amber-500/30 inline-block mb-3">
@@ -513,18 +573,18 @@ export default function Home() {
 
                 <h3 className="text-xl font-black mt-3 text-white tracking-tight">{motm.player_name}</h3>
                 <div className="inline-flex items-baseline gap-1 mt-1">
-                  <span className="text-4xl font-black text-red-500">{motm.avg_score}</span>
+                  <span className="text-4xl font-black text-emerald-400">{motm.avg_score}</span>
                   <span className="text-xs text-zinc-400 font-bold">/ 10</span>
                 </div>
                 <p className="text-[11px] text-zinc-400 mt-1">{motm.total_votes} avaliações registadas</p>
               </div>
             )}
 
-            {/* BOTÃO GERAR IMAGEM PARA STORIES / TWITTER */}
+            {/* Botão Gerar Imagem */}
             <button
               onClick={handleGenerateStoryImage}
               disabled={generatingImage}
-              className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:opacity-50 text-white font-black py-4 px-4 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-[0_4px_20px_rgba(220,38,38,0.4)] transition-all active:scale-98 cursor-pointer"
+              className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:opacity-50 text-white font-black py-3.5 px-4 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-[0_4px_20px_rgba(220,38,38,0.4)] transition-all active:scale-98 cursor-pointer"
             >
               <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -532,32 +592,36 @@ export default function Home() {
               {generatingImage ? 'A desenhar imagem...' : '📸 Gerar Cartão p/ Stories / X'}
             </button>
 
-            {/* Lista com as Médias normais */}
+            {/* Lista com Cores Dinâmicas */}
             <div className="space-y-2">
-              {stats.map((s, idx) => (
-                <div
-                  key={s.player_id}
-                  className="p-3 bg-zinc-900/80 border border-zinc-800/90 rounded-2xl flex items-center justify-between shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-black text-zinc-600 w-4 text-center">{idx + 1}</span>
-                    <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
-                      <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
-                    </div>
-                    <div>
-                      <p className="font-extrabold text-sm text-white">{s.player_name}</p>
-                      <span className="text-[10px] text-zinc-400 font-semibold">
-                        {s.position} • {s.total_votes} votos
-                      </span>
-                    </div>
-                  </div>
+              {stats.map((s, idx) => {
+                const itemTheme = getScoreTheme(Number(s.avg_score));
 
-                  <div className="text-right">
-                    <span className="text-xl font-black text-red-500">{s.avg_score}</span>
-                    <span className="text-[10px] text-zinc-500 font-bold"> /10</span>
+                return (
+                  <div
+                    key={s.player_id}
+                    className="p-3 bg-zinc-900/80 border border-zinc-800/90 rounded-2xl flex items-center justify-between shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black text-zinc-600 w-4 text-center">{idx + 1}</span>
+                      <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
+                        <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+                      </div>
+                      <div>
+                        <p className="font-extrabold text-sm text-white">{s.player_name}</p>
+                        <span className="text-[10px] text-zinc-400 font-semibold">
+                          {s.position} • {s.total_votes} votos
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right flex items-baseline gap-1">
+                      <span className={`text-xl font-black ${itemTheme.text}`}>{s.avg_score}</span>
+                      <span className="text-[10px] text-zinc-500 font-bold">/10</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -579,29 +643,33 @@ export default function Home() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {seasonStats.map((s, idx) => (
-                    <div
-                      key={s.player_id}
-                      className="p-3 bg-zinc-900/90 border border-zinc-800 rounded-2xl flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-black text-zinc-500 w-4 text-center">{idx + 1}</span>
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700 flex-shrink-0">
-                          <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+                  {seasonStats.map((s, idx) => {
+                    const itemTheme = getScoreTheme(Number(s.season_avg_score));
+
+                    return (
+                      <div
+                        key={s.player_id}
+                        className="p-3 bg-zinc-900/90 border border-zinc-800 rounded-2xl flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-black text-zinc-500 w-4 text-center">{idx + 1}</span>
+                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700 flex-shrink-0">
+                            <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+                          </div>
+                          <div>
+                            <p className="font-black text-xs text-white">{s.player_name}</p>
+                            <span className="text-[9px] text-zinc-400">
+                              {s.position} • {s.matches_played} jogos avaliados
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-black text-xs text-white">{s.player_name}</p>
-                          <span className="text-[9px] text-zinc-400">
-                            {s.position} • {s.matches_played} jogos avaliados
-                          </span>
+                        <div className="text-right flex items-baseline gap-1">
+                          <span className={`text-base font-black ${itemTheme.text}`}>{s.season_avg_score}</span>
+                          <span className="text-[9px] text-zinc-500 font-bold">/10</span>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-base font-black text-red-500">{s.season_avg_score}</span>
-                        <span className="text-[9px] text-zinc-500 font-bold"> /10</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -635,11 +703,19 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Rodapé com Aviso Legal (Não Oficial) */}
+        <footer className="mt-12 pt-6 border-t border-zinc-800/80 text-center space-y-1">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+            BenficaVote • Plataforma Independente
+          </p>
+          <p className="text-[9px] text-zinc-600 max-w-xs mx-auto leading-relaxed">
+            Projeto não oficial desenvolvido por adeptos para a comunidade benfiquista. Sem qualquer ligação institucional ou afiliação comercial ao Sport Lisboa e Benfica.
+          </p>
+        </footer>
       </div>
 
-      {/* =========================================================================
-          CARTÃO SOCIAL 1080x1920 (Formato Stories) RENDERIZADO FORA DO ECRÃ
-          ========================================================================= */}
+      {/* Cartão de Partilha Stories 1080x1920 */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
           <div
@@ -657,7 +733,6 @@ export default function Home() {
               backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.3) 0%, #09090b 70%)',
             }}
           >
-            {/* Cabeçalho do Cartão */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
@@ -681,7 +756,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* MVP em Destaque */}
             {motm && (
               <div style={{ margin: '20px 0', padding: '16px 20px', backgroundColor: '#18181b', borderRadius: '20px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -699,13 +773,12 @@ export default function Home() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '32px', fontWeight: 900, color: '#ef4444' }}>{motm.avg_score}</span>
+                  <span style={{ fontSize: '32px', fontWeight: 900, color: '#10b981' }}>{motm.avg_score}</span>
                   <span style={{ fontSize: '14px', color: '#71717a', fontWeight: 700 }}> /10</span>
                 </div>
               </div>
             )}
 
-            {/* Grid com Notas de Todo o Plantel */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', flex: 1 }}>
               {stats.map((s) => (
                 <div
@@ -731,17 +804,16 @@ export default function Home() {
                       {s.player_name}
                     </span>
                   </div>
-                  <span style={{ fontSize: '15px', fontWeight: 900, color: '#ef4444' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 900, color: Number(s.avg_score) >= 7 ? '#10b981' : Number(s.avg_score) >= 5 ? '#f59e0b' : '#ef4444' }}>
                     {s.avg_score}
                   </span>
                 </div>
               ))}
             </div>
 
-            {/* Rodapé com Link da App */}
             <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '11px', color: '#71717a', fontWeight: 600 }}>
-                Dá a tua nota após o apito final
+                Projeto independente de adeptos
               </span>
               <span style={{ fontSize: '12px', color: '#ffffff', fontWeight: 900, letterSpacing: '0.5px' }}>
                 benficavote.vercel.app
