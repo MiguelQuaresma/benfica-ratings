@@ -48,6 +48,39 @@ const POSITION_ORDER: Record<string, number> = {
 
 const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp";
 
+function getScoreTheme(score: number) {
+  if (score >= 8) {
+    return {
+      bg: 'bg-emerald-500/20',
+      border: 'border-emerald-500/80',
+      text: 'text-emerald-400',
+      glow: 'shadow-[0_0_15px_rgba(16,185,129,0.35)]',
+    };
+  }
+  if (score >= 6) {
+    return {
+      bg: 'bg-teal-500/20',
+      border: 'border-teal-500/80',
+      text: 'text-teal-400',
+      glow: 'shadow-[0_0_12px_rgba(20,184,166,0.3)]',
+    };
+  }
+  if (score >= 5) {
+    return {
+      bg: 'bg-amber-500/20',
+      border: 'border-amber-500/80',
+      text: 'text-amber-400',
+      glow: 'shadow-[0_0_12px_rgba(245,158,11,0.25)]',
+    };
+  }
+  return {
+    bg: 'bg-red-500/20',
+    border: 'border-red-600/80',
+    text: 'text-red-400',
+    glow: 'shadow-[0_0_12px_rgba(239,68,68,0.25)]',
+  };
+}
+
 function BenficaEmblem({ className = "w-7 h-7" }: { className?: string }) {
   return (
     <img
@@ -110,6 +143,7 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [lastRatedId, setLastRatedId] = useState<string | null>(null);
 
   const shareCardRef = useRef<HTMLDivElement>(null);
 
@@ -205,15 +239,20 @@ export default function Home() {
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
+      .order('season_avg_score', { ascending: false })
       .limit(10);
     if (season) setSeasonStats(season as SeasonStat[]);
   }
 
   const handleScore = (id: string, score: number) => {
     if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(10);
+      navigator.vibrate(12);
     }
     setRatings((prev) => ({ ...prev, [id]: score }));
+    setLastRatedId(id);
+    setTimeout(() => {
+      setLastRatedId(null);
+    }, 280);
   };
 
   const handleSubmit = async () => {
@@ -286,6 +325,12 @@ export default function Home() {
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
+  // Divisão do Top 3 para o Pódio do Histórico
+  const top1 = seasonStats[0] || null;
+  const top2 = seasonStats[1] || null;
+  const top3 = seasonStats[2] || null;
+  const remainingSeasonStats = seasonStats.slice(3);
+
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
       {/* Topo Limpo */}
@@ -338,7 +383,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Abas Limpas e Modernas */}
+        {/* Abas Limpas */}
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4">
           {activeMatch && (
             <>
@@ -396,13 +441,15 @@ export default function Home() {
               {players.map((p) => {
                 const currentScore = ratings[p.id];
                 const isCoach = p.position === 'TREINADOR';
+                const theme = currentScore ? getScoreTheme(currentScore) : null;
+                const isRecentlyChanged = lastRatedId === p.id;
 
                 return (
                   <div
                     key={p.id}
                     className={`rounded-2xl border transition-all ${
                       currentScore
-                        ? 'bg-[#141418] border-red-900/50'
+                        ? 'bg-[#141418] border-zinc-700/60'
                         : 'bg-[#111114] border-zinc-800/70'
                     }`}
                   >
@@ -417,11 +464,16 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm border ${
-                        currentScore
-                          ? 'bg-red-950/60 border-red-700 text-red-400'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-600'
-                      }`}>
+                      {/* BADGE COM MICRO-INTERAÇÃO DE ESCALA / GLOW */}
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm border transition-all duration-200 transform ${
+                          isRecentlyChanged ? 'scale-115' : 'scale-100'
+                        } ${
+                          currentScore && theme
+                            ? `${theme.bg}${theme.border} ${theme.text}${theme.glow}`
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-600'
+                        }`}
+                      >
                         {currentScore || '—'}
                       </div>
                     </div>
@@ -431,9 +483,9 @@ export default function Home() {
                         <button
                           key={num}
                           onClick={() => handleScore(p.id, num)}
-                          className={`py-1.5 rounded-md text-xs font-bold transition-all active:scale-95 ${
+                          className={`py-1.5 rounded-md text-xs font-bold transition-all active:scale-90 ${
                             currentScore === num
-                              ? 'bg-red-600 text-white'
+                              ? 'bg-red-600 text-white shadow-sm'
                               : 'bg-zinc-800/70 text-zinc-400 hover:text-white'
                           }`}
                         >
@@ -511,41 +563,93 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO */}
+        {/* VISTA 3: HISTÓRICO COM PÓDIO NO TOP 3 */}
         {view === 'history' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                Classificação da Época
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
+                  Top da Temporada
+                </h3>
+                <span className="text-[10px] text-zinc-500 font-medium">Médias de votos</span>
+              </div>
+
               {seasonStats.length === 0 ? (
                 <p className="text-xs text-zinc-500 bg-[#121215] p-3.5 rounded-xl border border-zinc-800/80 text-center">
                   Sem dados registados nesta época.
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {seasonStats.map((s, idx) => (
-                    <div
-                      key={s.player_id}
-                      className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-zinc-600 w-4">{idx + 1}</span>
-                        <div className="w-8 h-8 rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
-                          <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+                <>
+                  {/* PÓDIO HORIZONTAL DOS 3 PRIMEIROS */}
+                  <div className="grid grid-cols-3 gap-2 items-end pt-4 pb-2">
+                    {/* 2.º Lugar (Prata) */}
+                    {top2 && (
+                      <div className="bg-[#121216] border border-zinc-700/50 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
+                        <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-200 text-[10px] font-black flex items-center justify-center mb-1">
+                          2
+                        </span>
+                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-600 mb-1.5">
+                          <PlayerAvatar src={top2.photo_url} name={top2.player_name} />
                         </div>
-                        <div>
-                          <p className="font-bold text-xs text-white">{s.player_name}</p>
-                          <span className="text-[9px] text-zinc-500">{s.matches_played} jogos</span>
+                        <p className="font-bold text-[11px] text-white truncate w-full">{top2.player_name}</p>
+                        <span className="text-xs font-black text-zinc-300 mt-0.5">{top2.season_avg_score}</span>
+                      </div>
+                    )}
+
+                    {/* 1.º Lugar (Ouro - Centro e Destaque Maior) */}
+                    {top1 && (
+                      <div className="bg-gradient-to-b from-[#1c1710] to-[#121216] border-2 border-amber-500/70 rounded-2xl p-3 text-center relative flex flex-col items-center -translate-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+                        <span className="text-sm -mt-2 mb-0.5">👑</span>
+                        <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center mb-1 shadow">
+                          1
+                        </span>
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden bg-zinc-800 border-2 border-amber-400 mb-1.5 shadow">
+                          <PlayerAvatar src={top1.photo_url} name={top1.player_name} />
                         </div>
+                        <p className="font-black text-xs text-white truncate w-full">{top1.player_name}</p>
+                        <span className="text-sm font-black text-amber-400 mt-0.5">{top1.season_avg_score}</span>
                       </div>
-                      <div className="text-right">
-                        <span className="text-sm font-black text-red-500">{s.season_avg_score}</span>
-                        <span className="text-[9px] text-zinc-500 font-medium"> /10</span>
+                    )}
+
+                    {/* 3.º Lugar (Bronze) */}
+                    {top3 && (
+                      <div className="bg-[#121216] border border-amber-900/40 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
+                        <span className="w-5 h-5 rounded-full bg-amber-900/80 text-amber-200 text-[10px] font-black flex items-center justify-center mb-1">
+                          3
+                        </span>
+                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-amber-900/60 mb-1.5">
+                          <PlayerAvatar src={top3.photo_url} name={top3.player_name} />
+                        </div>
+                        <p className="font-bold text-[11px] text-white truncate w-full">{top3.player_name}</p>
+                        <span className="text-xs font-black text-amber-500 mt-0.5">{top3.season_avg_score}</span>
                       </div>
+                    )}
+                  </div>
+
+                  {/* RESTANTES JOGADORES (4.º AO 10.º) */}
+                  {remainingSeasonStats.length > 0 && (
+                    <div className="space-y-1.5 mt-2">
+                      {remainingSeasonStats.map((s, idx) => (
+                        <div
+                          key={s.player_id}
+                          className="p-2.5 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-[11px] font-bold text-zinc-500 w-4 text-center">{idx + 4}</span>
+                            <div className="w-7 h-7 rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
+                              <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+                            </div>
+                            <p className="font-bold text-xs text-white truncate">{s.player_name}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-black text-red-500">{s.season_avg_score}</span>
+                            <span className="text-[8px] text-zinc-500"> /10</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -579,7 +683,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Rodapé Institucional com Disclaimer Legal */}
+        {/* Rodapé Legal */}
         <footer className="mt-12 pt-6 border-t border-zinc-800/50 text-center space-y-1">
           <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
             BenficaVote • Plataforma de Adeptos
@@ -590,7 +694,7 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* Cartão Stories Fora do Ecrã */}
+      {/* Cartão de Partilha Stories Fora do Ecrã */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
           <div
