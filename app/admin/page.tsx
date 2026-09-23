@@ -60,26 +60,24 @@ function AdminPlayerAvatar({ src, name }: { src: string; name: string }) {
 }
 
 export default function AdminPage() {
-  // Autenticação com PIN
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  // Estados do Admin
   const [tab, setTab] = useState<'manage' | 'schedule' | 'open_voting'>('manage');
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Estado para Agendar
+  // Agendar
   const [schedOpponent, setSchedOpponent] = useState('');
   const [schedCompetition, setSchedCompetition] = useState('Liga Portugal');
   const [schedDateTime, setSchedDateTime] = useState('');
   const [schedIsHome, setSchedIsHome] = useState(true);
   const [schedLoading, setSchedLoading] = useState(false);
 
-  // Estado para Abrir Votação
+  // Votação
   const [voteMode, setVoteMode] = useState<'upcoming' | 'custom'>('upcoming');
   const [voteOpponent, setVoteOpponent] = useState('');
   const [voteCompetition, setVoteCompetition] = useState('Liga Portugal');
@@ -87,6 +85,7 @@ export default function AdminPage() {
   const [voteLoading, setVoteLoading] = useState(false);
 
   const [closingLoading, setClosingLoading] = useState(false);
+  const [clearingLoading, setClearingLoading] = useState(false);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
@@ -178,7 +177,7 @@ export default function AdminPage() {
 
   const handleCloseVoting = async () => {
     if (!activeMatch) return;
-    const confirmClose = window.confirm(`Encerrar a votação contra ${activeMatch.opponent}?`);
+    const confirmClose = window.confirm(`Encerrar votação contra ${activeMatch.opponent}?`);
     if (!confirmClose) return;
 
     setClosingLoading(true);
@@ -197,6 +196,34 @@ export default function AdminPage() {
       setStatus(`✓ Votação contra ${activeMatch.opponent} encerrada!`);
       await loadCurrentMatches();
       setTab('manage');
+    }
+  };
+
+  // BOTÃO: Limpar Histórico com Janela de Segurança
+  const handleClearHistory = async () => {
+    const confirmText = window.prompt(
+      'Tens a certeza que queres limpar todo o histórico de votos e jogos passados?\n\nEscreve "APAGAR" para confirmar:'
+    );
+
+    if (confirmText !== 'APAGAR') {
+      if (confirmText !== null) alert('Ação cancelada.');
+      return;
+    }
+
+    setClearingLoading(true);
+    setStatus('A limpar histórico...');
+
+    try {
+      await supabase.from('ratings').delete().neq('match_id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('match_lineups').delete().neq('match_id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('matches').delete().eq('is_open_for_voting', false).lt('date', new Date().toISOString());
+
+      setStatus('✓ Histórico e dados de jogos anteriores limpos com sucesso!');
+      await loadCurrentMatches();
+    } catch (err: any) {
+      setStatus('Erro ao limpar: ' + (err.message || 'Falha de comunicação'));
+    } finally {
+      setClearingLoading(false);
     }
   };
 
@@ -237,7 +264,7 @@ export default function AdminPage() {
     const targetIsHome = isUsingUpcoming ? upcomingMatch.is_home !== false : voteIsHome;
 
     if (!targetOpponent || selectedIds.size === 0) {
-      alert('Verifica o adversário e escolhe pelo menos um jogador convocado.');
+      alert('Verifica o adversário e seleciona pelo menos um jogador.');
       return;
     }
 
@@ -305,7 +332,7 @@ export default function AdminPage() {
     }
   };
 
-  // Ecrã de bloqueio por PIN
+  // Ecrã de bloqueio
   if (!isAuthenticated) {
     return (
       <main className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center p-4 font-sans">
@@ -322,7 +349,8 @@ export default function AdminPage() {
           </div>
 
           <input
-            type="password"
+            type="tel"
+            autoComplete="off"
             placeholder="PIN"
             value={pinInput}
             onChange={(e) => setPinInput(e.target.value)}
@@ -345,10 +373,10 @@ export default function AdminPage() {
     );
   }
 
-  // Painel Desbloqueado
   return (
-    <main className="min-h-screen bg-[#0e0e10] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-24">
-      <div className="pb-3 border-b border-zinc-800 mb-4 flex items-center justify-between">
+    <main className="min-h-screen bg-[#09090b] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-24">
+      {/* Topo */}
+      <div className="pb-3 border-b border-zinc-800/80 mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-base font-black text-red-600 tracking-tight">ADMIN • BENFICAVOTE</h1>
           <p className="text-[11px] text-zinc-400">Controlo de Jogos e Votações</p>
@@ -370,6 +398,7 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* Abas */}
       <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 mb-5">
         <button
           onClick={() => { setTab('manage'); setStatus(''); }}
@@ -397,9 +426,10 @@ export default function AdminPage() {
         </button>
       </div>
 
+      {/* ABA 1: ESTADO E GESTÃO */}
       {tab === 'manage' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
+          <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 shadow-md">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
               Votação Atual
             </span>
@@ -429,7 +459,7 @@ export default function AdminPage() {
             )}
           </div>
 
-          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 shadow-md">
+          <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 shadow-md">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
               Próximo no Calendário
             </span>
@@ -464,9 +494,31 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+
+          {/* ZONA DE PERIGO: LIMPAR HISTÓRICO */}
+          <div className="p-4 rounded-2xl bg-zinc-950 border border-red-900/40 mt-6 space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-red-500 block">
+              Zona de Perigo
+            </span>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Remove todas as avaliações passadas e reinicia a classificação da época para recomeçar do zero.
+            </p>
+            <button
+              type="button"
+              onClick={handleClearHistory}
+              disabled={clearingLoading}
+              className="w-full mt-2 bg-zinc-900 hover:bg-red-950/80 text-red-400 hover:text-red-300 border border-red-900/60 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              {clearingLoading ? 'A limpar...' : 'Limpar Histórico Completo'}
+            </button>
+          </div>
         </div>
       )}
 
+      {/* ABA 2: ABRIR VOTAÇÃO */}
       {tab === 'open_voting' && (
         <div className="space-y-4">
           {upcomingMatch && (
@@ -605,6 +657,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* ABA 3: AGENDAR */}
       {tab === 'schedule' && (
         <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl shadow-xl">
           <div>
