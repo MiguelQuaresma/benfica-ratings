@@ -139,6 +139,7 @@ export default function Home() {
   const [seasonStats, setSeasonStats] = useState<SeasonStat[]>([]);
   const [pastMatches, setPastMatches] = useState<Match[]>([]);
   const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [hasVoted, setHasVoted] = useState(false);
   const [view, setView] = useState<'vote' | 'results' | 'history'>('vote');
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
@@ -161,6 +162,26 @@ export default function Home() {
       if (current) {
         const matchData = current as Match;
         setActiveMatch(matchData);
+
+        // Verificar se este dispositivo já tinha votado anteriormente neste jogo
+        const voterToken = localStorage.getItem('voter_token');
+        if (voterToken) {
+          const { data: existingVotes } = await supabase
+            .from('ratings')
+            .select('player_id, score')
+            .eq('match_id', matchData.id)
+            .eq('user_id', voterToken);
+
+          if (existingVotes && existingVotes.length > 0) {
+            const savedRatings: Record<string, number> = {};
+            existingVotes.forEach((v: any) => {
+              savedRatings[v.player_id] = v.score;
+            });
+            setRatings(savedRatings);
+            setHasVoted(true);
+          }
+        }
+
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -281,11 +302,13 @@ export default function Home() {
     if (error && error.message.includes('unique')) {
       alert('Já submeteste a tua avaliação para esta partida.');
     }
+
+    setHasVoted(true);
     await loadStats(activeMatch.id);
+    // Transição automática para os Resultados logo após votar
     setView('results');
   };
 
-  // Exportar Imagem genérica
   const exportImage = async (ref: React.RefObject<HTMLDivElement | null>, defaultName: string, title: string) => {
     if (!ref.current) return;
     try {
@@ -318,17 +341,15 @@ export default function Home() {
     }
   };
 
-  // Gerar Cartão com as notas do próprio utilizador
   const handleGenerateUserCard = async () => {
     if (Object.keys(ratings).length === 0) {
-      return alert('Dá pelo menos uma nota para gerar o teu cartão!');
+      return alert('Não existem notas tuas registadas para criar o cartão.');
     }
     setGeneratingUserCard(true);
     await exportImage(userCardRef, `As-Minhas-Notas-${activeMatch?.opponent || 'Benfica'}`, 'As Minhas Notas • BenficaVote');
     setGeneratingUserCard(false);
   };
 
-  // Gerar Cartão com as notas da comunidade
   const handleGenerateCommunityCard = async () => {
     setGeneratingCommunityCard(true);
     await exportImage(communityCardRef, `Notas-Adeptos-${activeMatch?.opponent || 'Benfica'}`, 'Notas dos Adeptos • BenficaVote');
@@ -339,7 +360,7 @@ export default function Home() {
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
-  // Jogador mais votado pelo utilizador (Melhor na opinião do user)
+  // Jogador mais votado pelo utilizador
   const userBestPlayer = players
     .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
     .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
@@ -350,7 +371,7 @@ export default function Home() {
   const top3 = seasonStats[2] || null;
   const remainingSeasonStats = seasonStats.slice(3);
 
-  // Média Global de TODOS os jogos no histórico
+  // Média Global de TODOS os jogos
   const allSeasonScores = seasonStats.map((s) => Number(s.season_avg_score)).filter((n) => !isNaN(n) && n > 0);
   const globalAverage = allSeasonScores.length > 0
     ? (allSeasonScores.reduce((acc, curr) => acc + curr, 0) / allSeasonScores.length).toFixed(1)
@@ -358,7 +379,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
-      {/* Topo */}
+      {/* Topo Limpo */}
       <header className="border-b border-zinc-800/60 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -381,7 +402,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Próximo Jogo */}
+        {/* Próximo Jogo Clean */}
         {upcomingMatch && (
           <div className="mb-4 p-4 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
@@ -446,12 +467,12 @@ export default function Home() {
           </button>
         </div>
 
-        {/* VISTA 1: VOTAR (Com opção de gerar o cartão com as notas do utilizador) */}
+        {/* VISTA 1: VOTAR (Totalmente limpa, sem distrações) */}
         {activeMatch && view === 'vote' && (
           <>
             <div className="mb-3">
               <div className="flex justify-between text-[11px] font-medium text-zinc-400 mb-1">
-                <span>Progresso</span>
+                <span>Progresso das notas</span>
                 <span>{Math.round(progressPercent)}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
@@ -461,20 +482,6 @@ export default function Home() {
                 ></div>
               </div>
             </div>
-
-            {/* Botão de Partilha das Notas do Utilizador */}
-            {evaluatedCount > 0 && (
-              <button
-                onClick={handleGenerateUserCard}
-                disabled={generatingUserCard}
-                className="w-full mb-3 bg-[#16161b] hover:bg-[#1a1a21] border border-red-900/40 text-red-400 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-98"
-              >
-                <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                {generatingUserCard ? 'A gerar imagem...' : '📸 Gerar Cartão com as Minhas Notas'}
-              </button>
-            )}
 
             <div className="space-y-2.5">
               {players.map((p) => {
@@ -540,15 +547,55 @@ export default function Home() {
                 disabled={submitting}
                 className="w-full mt-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 shadow-md"
               >
-                {submitting ? 'A guardar...' : 'Submeter Avaliações'}
+                {submitting ? 'A guardar votos...' : 'Submeter Avaliações'}
               </button>
             </div>
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS (Com opção de gerar o cartão com a média dos adeptos) */}
+        {/* VISTA 2: RESULTADOS (Aparece logo após votar com as duas opções de cartão) */}
         {activeMatch && view === 'results' && (
           <div className="space-y-3">
+            {/* Bloco de Agradecimento e Ações de Partilha */}
+            <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3">
+              <div>
+                <span className="text-emerald-400 text-xs font-black uppercase tracking-wider block">
+                  ✓ Avaliação Registada
+                </span>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Exporta e partilha o teu boletim de notas nas redes sociais:
+                </p>
+              </div>
+
+              {/* Botões dos 2 Cartões */}
+              <div className="grid grid-cols-1 gap-2 pt-1">
+                {/* 1. O TEU CARTÃO PESSOAL */}
+                <button
+                  onClick={handleGenerateUserCard}
+                  disabled={generatingUserCard}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md"
+                >
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  {generatingUserCard ? 'A criar o teu cartão...' : '📸 Gerar Cartão: Os Meus Votos'}
+                </button>
+
+                {/* 2. CARTÃO COM A MÉDIA DOS ADEPTOS */}
+                <button
+                  onClick={handleGenerateCommunityCard}
+                  disabled={generatingCommunityCard}
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-200 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2 transition-all active:scale-98"
+                >
+                  <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  {generatingCommunityCard ? 'A preparar cartão...' : '👥 Cartão: Pontuações dos Adeptos'}
+                </button>
+              </div>
+            </div>
+
+            {/* Homem do Jogo */}
             {motm && Number(motm.avg_score) > 0 && (
               <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center">
                 <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
@@ -564,18 +611,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* Botão de Retirar Cartão da Pontuação dos Adeptos */}
-            <button
-              onClick={handleGenerateCommunityCard}
-              disabled={generatingCommunityCard}
-              className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-800 flex items-center justify-center gap-2 transition-all active:scale-98 shadow-sm"
-            >
-              <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {generatingCommunityCard ? 'A preparar cartão...' : '📸 Gerar Cartão: Pontuações dos Adeptos'}
-            </button>
-
+            {/* Lista dos Jogadores e Médias */}
             <div className="space-y-2">
               {stats.map((s, idx) => (
                 <div
@@ -589,7 +625,9 @@ export default function Home() {
                     </div>
                     <div>
                       <p className="font-bold text-xs text-white">{s.player_name}</p>
-                      <span className="text-[9px] text-zinc-500">{s.position} • {s.total_votes} votos</span>
+                      <span className="text-[9px] text-zinc-500">
+                        {s.position} • {s.total_votes} votos {ratings[s.player_id] ? `(A tua nota: ${ratings[s.player_id]})` : ''}
+                      </span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -605,7 +643,6 @@ export default function Home() {
         {/* VISTA 3: HISTÓRICO COM MÉDIA GLOBAL DE TODOS OS JOGOS */}
         {view === 'history' && (
           <div className="space-y-5">
-            {/* Bloco de Média Global da Época */}
             <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider text-red-500 block">
@@ -620,7 +657,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Pódio e Classificação Geral */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">
@@ -636,7 +672,6 @@ export default function Home() {
               ) : (
                 <>
                   <div className="grid grid-cols-3 gap-2 items-end pt-4 pb-2">
-                    {/* 2.º Lugar */}
                     {top2 && (
                       <div className="bg-[#121216] border border-zinc-700/50 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
                         <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-200 text-[10px] font-black flex items-center justify-center mb-1">
@@ -650,7 +685,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* 1.º Lugar */}
                     {top1 && (
                       <div className="bg-gradient-to-b from-[#1c1710] to-[#121216] border-2 border-amber-500/70 rounded-2xl p-3 text-center relative flex flex-col items-center -translate-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
                         <span className="text-sm -mt-2 mb-0.5">👑</span>
@@ -665,7 +699,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* 3.º Lugar */}
                     {top3 && (
                       <div className="bg-[#121216] border border-amber-900/40 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
                         <span className="w-5 h-5 rounded-full bg-amber-900/80 text-amber-200 text-[10px] font-black flex items-center justify-center mb-1">
@@ -706,7 +739,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* Lista dos Jogos Anteriores */}
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
                 Histórico de Jogos
@@ -749,7 +781,7 @@ export default function Home() {
       </div>
 
       {/* =========================================================================
-          1. CARTÃO VISUAL DAS NOTAS DO UTILIZADOR (AS MINHAS NOTAS)
+          1. CARTÃO VISUAL DAS NOTAS DO UTILIZADOR (OS MEUS VOTOS)
           ========================================================================= */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
@@ -775,7 +807,7 @@ export default function Home() {
                     BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
                   </div>
                   <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 800, textTransform: 'uppercase' }}>
-                    As Minhas Notas do Jogo
+                    Os Meus Votos no Jogo
                   </div>
                 </div>
               </div>
@@ -839,7 +871,7 @@ export default function Home() {
       )}
 
       {/* =========================================================================
-          2. CARTÃO VISUAL DAS NOTAS DOS ADEPTOS (COMUNIDADE)
+          2. CARTÃO VISUAL DAS PONTUAÇÕES DOS ADEPTOS (COMUNIDADE)
           ========================================================================= */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
