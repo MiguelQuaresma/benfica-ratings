@@ -152,6 +152,7 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
+      // 1. Procurar jogo ativo
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -163,25 +164,7 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
-        // Verificar se este dispositivo já tinha votado anteriormente neste jogo
-        const voterToken = localStorage.getItem('voter_token');
-        if (voterToken) {
-          const { data: existingVotes } = await supabase
-            .from('ratings')
-            .select('player_id, score')
-            .eq('match_id', matchData.id)
-            .eq('user_id', voterToken);
-
-          if (existingVotes && existingVotes.length > 0) {
-            const savedRatings: Record<string, number> = {};
-            existingVotes.forEach((v: any) => {
-              savedRatings[v.player_id] = v.score;
-            });
-            setRatings(savedRatings);
-            setHasVoted(true);
-          }
-        }
-
+        // 2. Carregar o plantel do jogo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -200,11 +183,41 @@ export default function Home() {
           });
           setPlayers(sorted);
         }
+
+        // 3. VERIFICAR SE O DISPOSITIVO JÁ SUBMETEU NESTE JOGO
+        let voterToken = localStorage.getItem('voter_token');
+        let userAlreadyVoted = false;
+
+        if (voterToken) {
+          const { data: userRatings } = await supabase
+            .from('ratings')
+            .select('player_id, score')
+            .eq('match_id', matchData.id)
+            .eq('user_id', voterToken);
+
+          if (userRatings && userRatings.length > 0) {
+            userAlreadyVoted = true;
+            const userScores: Record<string, number> = {};
+            userRatings.forEach((r: any) => {
+              userScores[r.player_id] = r.score;
+            });
+            setRatings(userScores);
+            setHasVoted(true);
+            // Salta diretamente para os Resultados com o botão de gerar cartão
+            setView('results');
+          }
+        }
+
+        if (!userAlreadyVoted) {
+          setView('vote');
+        }
+
         loadStats(matchData.id);
       } else {
         setView('history');
       }
 
+      // 4. Procurar próximo jogo agendado
       const { data: next } = await supabase
         .from('matches')
         .select('*')
@@ -300,12 +313,11 @@ export default function Home() {
     setSubmitting(false);
 
     if (error && error.message.includes('unique')) {
-      alert('Já submeteste a tua avaliação para esta partida.');
+      alert('Já tinhas submetido a tua avaliação para esta partida.');
     }
 
     setHasVoted(true);
     await loadStats(activeMatch.id);
-    // Transição automática para os Resultados logo após votar
     setView('results');
   };
 
@@ -325,7 +337,7 @@ export default function Home() {
         await navigator.share({
           files: [file],
           title,
-          text: `Avaliações no jogo do Benfica! #SLBenfica`,
+          text: `Avaliações no jogo do SL Benfica! #SLBenfica`,
         });
       } else {
         const url = URL.createObjectURL(blob);
@@ -343,7 +355,7 @@ export default function Home() {
 
   const handleGenerateUserCard = async () => {
     if (Object.keys(ratings).length === 0) {
-      return alert('Não existem notas tuas registadas para criar o cartão.');
+      return alert('Não existem notas tuas registadas.');
     }
     setGeneratingUserCard(true);
     await exportImage(userCardRef, `As-Minhas-Notas-${activeMatch?.opponent || 'Benfica'}`, 'As Minhas Notas • BenficaVote');
@@ -360,18 +372,18 @@ export default function Home() {
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
-  // Jogador mais votado pelo utilizador
+  // Melhor jogador segundo o utilizador
   const userBestPlayer = players
     .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
     .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
 
-  // Pódio do Histórico
+  // Top 3 do Histórico
   const top1 = seasonStats[0] || null;
   const top2 = seasonStats[1] || null;
   const top3 = seasonStats[2] || null;
   const remainingSeasonStats = seasonStats.slice(3);
 
-  // Média Global de TODOS os jogos
+  // Média global de todos os jogos
   const allSeasonScores = seasonStats.map((s) => Number(s.season_avg_score)).filter((n) => !isNaN(n) && n > 0);
   const globalAverage = allSeasonScores.length > 0
     ? (allSeasonScores.reduce((acc, curr) => acc + curr, 0) / allSeasonScores.length).toFixed(1)
@@ -402,7 +414,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Próximo Jogo Clean */}
+        {/* Próximo Jogo */}
         {upcomingMatch && (
           <div className="mb-4 p-4 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
@@ -439,7 +451,7 @@ export default function Home() {
                   view === 'vote' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                Votar ({evaluatedCount}/{players.length})
+                {hasVoted ? 'Os Teus Votos' : `Votar (${evaluatedCount}/${players.length})`}
               </button>
               <button
                 onClick={() => {
@@ -467,12 +479,12 @@ export default function Home() {
           </button>
         </div>
 
-        {/* VISTA 1: VOTAR (Totalmente limpa, sem distrações) */}
+        {/* VISTA 1: VOTAR */}
         {activeMatch && view === 'vote' && (
           <>
             <div className="mb-3">
               <div className="flex justify-between text-[11px] font-medium text-zinc-400 mb-1">
-                <span>Progresso das notas</span>
+                <span>{hasVoted ? 'Votação gravada neste dispositivo' : 'Progresso das notas'}</span>
                 <span>{Math.round(progressPercent)}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
@@ -542,46 +554,58 @@ export default function Home() {
                 );
               })}
 
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="w-full mt-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 shadow-md"
-              >
-                {submitting ? 'A guardar votos...' : 'Submeter Avaliações'}
-              </button>
+              {!hasVoted ? (
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="w-full mt-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 shadow-md"
+                >
+                  {submitting ? 'A guardar votos...' : 'Submeter Avaliações'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setView('results')}
+                  className="w-full mt-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold py-3 rounded-xl text-xs uppercase tracking-wider border border-zinc-700 flex items-center justify-center gap-2"
+                >
+                  Ver Resultados e Gerar Cartões ↗
+                </button>
+              )}
             </div>
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS (Aparece logo após votar com as duas opções de cartão) */}
+        {/* VISTA 2: RESULTADOS (Aparece logo ao entrar se o dispositivo já tiver votado) */}
         {activeMatch && view === 'results' && (
           <div className="space-y-3">
-            {/* Bloco de Agradecimento e Ações de Partilha */}
+            {/* Bloco de Destaque para o Cartão dos Votos deste Dispositivo */}
             <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3">
               <div>
                 <span className="text-emerald-400 text-xs font-black uppercase tracking-wider block">
-                  ✓ Avaliação Registada
+                  {hasVoted ? '✓ O teu voto está registado' : 'Resultados em Direto'}
                 </span>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Exporta e partilha o teu boletim de notas nas redes sociais:
+                  {hasVoted
+                    ? 'Podes exportar as tuas notas ou consultar a média da comunidade:'
+                    : 'Avaliações em tempo real da comunidade benfiquista:'}
                 </p>
               </div>
 
-              {/* Botões dos 2 Cartões */}
               <div className="grid grid-cols-1 gap-2 pt-1">
-                {/* 1. O TEU CARTÃO PESSOAL */}
-                <button
-                  onClick={handleGenerateUserCard}
-                  disabled={generatingUserCard}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md"
-                >
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  {generatingUserCard ? 'A criar o teu cartão...' : '📸 Gerar Cartão: Os Meus Votos'}
-                </button>
+                {/* 1. CARTÃO DOS MEUS VOTOS (Se este dispositivo já votou) */}
+                {hasVoted && (
+                  <button
+                    onClick={handleGenerateUserCard}
+                    disabled={generatingUserCard}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md"
+                  >
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    {generatingUserCard ? 'A criar imagem...' : '📸 Gerar Cartão: Os Meus Votos'}
+                  </button>
+                )}
 
-                {/* 2. CARTÃO COM A MÉDIA DOS ADEPTOS */}
+                {/* 2. CARTÃO DA COMUNIDADE */}
                 <button
                   onClick={handleGenerateCommunityCard}
                   disabled={generatingCommunityCard}
@@ -640,7 +664,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO COM MÉDIA GLOBAL DE TODOS OS JOGOS */}
+        {/* VISTA 3: HISTÓRICO COM MÉDIA GLOBAL */}
         {view === 'history' && (
           <div className="space-y-5">
             <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
@@ -781,7 +805,7 @@ export default function Home() {
       </div>
 
       {/* =========================================================================
-          1. CARTÃO VISUAL DAS NOTAS DO UTILIZADOR (OS MEUS VOTOS)
+          1. CARTÃO VISUAL DAS NOTAS DO UTILIZADOR
           ========================================================================= */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
@@ -871,7 +895,7 @@ export default function Home() {
       )}
 
       {/* =========================================================================
-          2. CARTÃO VISUAL DAS PONTUAÇÕES DOS ADEPTOS (COMUNIDADE)
+          2. CARTÃO VISUAL DAS PONTUAÇÕES DOS ADEPTOS
           ========================================================================= */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
