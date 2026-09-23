@@ -142,10 +142,12 @@ export default function Home() {
   const [view, setView] = useState<'vote' | 'results' | 'history'>('vote');
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
-  const [generatingImage, setGeneratingImage] = useState(false);
+  const [generatingUserCard, setGeneratingUserCard] = useState(false);
+  const [generatingCommunityCard, setGeneratingCommunityCard] = useState(false);
   const [lastRatedId, setLastRatedId] = useState<string | null>(null);
 
-  const shareCardRef = useRef<HTMLDivElement>(null);
+  const userCardRef = useRef<HTMLDivElement>(null);
+  const communityCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -233,14 +235,13 @@ export default function Home() {
       .select('*')
       .eq('is_open_for_voting', false)
       .order('date', { ascending: false })
-      .limit(8);
+      .limit(15);
     if (matches) setPastMatches(matches as Match[]);
 
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
-      .order('season_avg_score', { ascending: false })
-      .limit(10);
+      .order('season_avg_score', { ascending: false });
     if (season) setSeasonStats(season as SeasonStat[]);
   }
 
@@ -284,56 +285,80 @@ export default function Home() {
     setView('results');
   };
 
-  const handleGenerateStoryImage = async () => {
-    if (!shareCardRef.current) return;
-    setGeneratingImage(true);
-
+  // Exportar Imagem genérica
+  const exportImage = async (ref: React.RefObject<HTMLDivElement | null>, defaultName: string, title: string) => {
+    if (!ref.current) return;
     try {
-      const blob = await toBlob(shareCardRef.current, {
+      const blob = await toBlob(ref.current, {
         quality: 0.95,
         cacheBust: true,
         pixelRatio: 2,
       });
 
-      if (!blob) throw new Error('Falha ao desenhar imagem.');
-
-      const file = new File([blob], `benficavote-${Date.now()}.png`, { type: 'image/png' });
+      if (!blob) throw new Error('Falha ao processar imagem.');
+      const file = new File([blob], `${defaultName}.png`, { type: 'image/png' });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: 'BenficaVote • Avaliações',
-          text: `Notas dos adeptos no jogo do Benfica! #SLBenfica`,
+          title,
+          text: `Avaliações no jogo do Benfica! #SLBenfica`,
         });
       } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `BenficaVote-${activeMatch?.opponent || 'Ratings'}.png`;
+        a.download = `${defaultName}.png`;
         a.click();
         URL.revokeObjectURL(url);
       }
     } catch (err) {
       console.error(err);
       alert('Não foi possível gerar a imagem no dispositivo.');
-    } finally {
-      setGeneratingImage(false);
     }
+  };
+
+  // Gerar Cartão com as notas do próprio utilizador
+  const handleGenerateUserCard = async () => {
+    if (Object.keys(ratings).length === 0) {
+      return alert('Dá pelo menos uma nota para gerar o teu cartão!');
+    }
+    setGeneratingUserCard(true);
+    await exportImage(userCardRef, `As-Minhas-Notas-${activeMatch?.opponent || 'Benfica'}`, 'As Minhas Notas • BenficaVote');
+    setGeneratingUserCard(false);
+  };
+
+  // Gerar Cartão com as notas da comunidade
+  const handleGenerateCommunityCard = async () => {
+    setGeneratingCommunityCard(true);
+    await exportImage(communityCardRef, `Notas-Adeptos-${activeMatch?.opponent || 'Benfica'}`, 'Notas dos Adeptos • BenficaVote');
+    setGeneratingCommunityCard(false);
   };
 
   const motm = stats.find((s) => s.position !== 'TREINADOR');
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
-  // Divisão do Top 3 para o Pódio do Histórico
+  // Jogador mais votado pelo utilizador (Melhor na opinião do user)
+  const userBestPlayer = players
+    .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
+    .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
+
+  // Pódio do Histórico
   const top1 = seasonStats[0] || null;
   const top2 = seasonStats[1] || null;
   const top3 = seasonStats[2] || null;
   const remainingSeasonStats = seasonStats.slice(3);
 
+  // Média Global de TODOS os jogos no histórico
+  const allSeasonScores = seasonStats.map((s) => Number(s.season_avg_score)).filter((n) => !isNaN(n) && n > 0);
+  const globalAverage = allSeasonScores.length > 0
+    ? (allSeasonScores.reduce((acc, curr) => acc + curr, 0) / allSeasonScores.length).toFixed(1)
+    : '0.0';
+
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
-      {/* Topo Limpo */}
+      {/* Topo */}
       <header className="border-b border-zinc-800/60 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -356,7 +381,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Próximo Jogo Clean */}
+        {/* Próximo Jogo */}
         {upcomingMatch && (
           <div className="mb-4 p-4 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
@@ -383,7 +408,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Abas Limpas */}
+        {/* Abas */}
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4">
           {activeMatch && (
             <>
@@ -421,7 +446,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* VISTA 1: VOTAR */}
+        {/* VISTA 1: VOTAR (Com opção de gerar o cartão com as notas do utilizador) */}
         {activeMatch && view === 'vote' && (
           <>
             <div className="mb-3">
@@ -436,6 +461,20 @@ export default function Home() {
                 ></div>
               </div>
             </div>
+
+            {/* Botão de Partilha das Notas do Utilizador */}
+            {evaluatedCount > 0 && (
+              <button
+                onClick={handleGenerateUserCard}
+                disabled={generatingUserCard}
+                className="w-full mb-3 bg-[#16161b] hover:bg-[#1a1a21] border border-red-900/40 text-red-400 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-98"
+              >
+                <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {generatingUserCard ? 'A gerar imagem...' : '📸 Gerar Cartão com as Minhas Notas'}
+              </button>
+            )}
 
             <div className="space-y-2.5">
               {players.map((p) => {
@@ -464,7 +503,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* BADGE COM MICRO-INTERAÇÃO DE ESCALA / GLOW */}
                       <div
                         className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm border transition-all duration-200 transform ${
                           isRecentlyChanged ? 'scale-115' : 'scale-100'
@@ -508,13 +546,13 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS */}
+        {/* VISTA 2: RESULTADOS (Com opção de gerar o cartão com a média dos adeptos) */}
         {activeMatch && view === 'results' && (
           <div className="space-y-3">
             {motm && Number(motm.avg_score) > 0 && (
               <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center">
                 <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
-                  ★ Homem do Jogo
+                  ★ Homem do Jogo da Comunidade
                 </span>
                 <div className="w-16 h-16 mx-auto rounded-2xl overflow-hidden bg-zinc-800 border border-zinc-700 my-2">
                   <PlayerAvatar src={motm.photo_url} name={motm.player_name} />
@@ -526,15 +564,16 @@ export default function Home() {
               </div>
             )}
 
+            {/* Botão de Retirar Cartão da Pontuação dos Adeptos */}
             <button
-              onClick={handleGenerateStoryImage}
-              disabled={generatingImage}
+              onClick={handleGenerateCommunityCard}
+              disabled={generatingCommunityCard}
               className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-800 flex items-center justify-center gap-2 transition-all active:scale-98 shadow-sm"
             >
               <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              {generatingImage ? 'A gerar...' : 'Partilhar Cartão Visual'}
+              {generatingCommunityCard ? 'A preparar cartão...' : '📸 Gerar Cartão: Pontuações dos Adeptos'}
             </button>
 
             <div className="space-y-2">
@@ -563,15 +602,31 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO COM PÓDIO NO TOP 3 */}
+        {/* VISTA 3: HISTÓRICO COM MÉDIA GLOBAL DE TODOS OS JOGOS */}
         {view === 'history' && (
-          <div className="space-y-6">
+          <div className="space-y-5">
+            {/* Bloco de Média Global da Época */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-red-500 block">
+                  Registo Acumulado
+                </span>
+                <h3 className="text-sm font-bold text-white">Média Global de Todos os Jogos</h3>
+                <p className="text-[11px] text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
+              </div>
+              <div className="text-right">
+                <span className="text-3xl font-black text-red-500">{globalAverage}</span>
+                <span className="text-xs text-zinc-500 font-bold"> /10</span>
+              </div>
+            </div>
+
+            {/* Pódio e Classificação Geral */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
+                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">
                   Top da Temporada
                 </h3>
-                <span className="text-[10px] text-zinc-500 font-medium">Médias de votos</span>
+                <span className="text-[10px] text-zinc-500 font-medium">Médias globais</span>
               </div>
 
               {seasonStats.length === 0 ? (
@@ -580,9 +635,8 @@ export default function Home() {
                 </p>
               ) : (
                 <>
-                  {/* PÓDIO HORIZONTAL DOS 3 PRIMEIROS */}
                   <div className="grid grid-cols-3 gap-2 items-end pt-4 pb-2">
-                    {/* 2.º Lugar (Prata) */}
+                    {/* 2.º Lugar */}
                     {top2 && (
                       <div className="bg-[#121216] border border-zinc-700/50 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
                         <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-200 text-[10px] font-black flex items-center justify-center mb-1">
@@ -596,7 +650,7 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* 1.º Lugar (Ouro - Centro e Destaque Maior) */}
+                    {/* 1.º Lugar */}
                     {top1 && (
                       <div className="bg-gradient-to-b from-[#1c1710] to-[#121216] border-2 border-amber-500/70 rounded-2xl p-3 text-center relative flex flex-col items-center -translate-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
                         <span className="text-sm -mt-2 mb-0.5">👑</span>
@@ -611,7 +665,7 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* 3.º Lugar (Bronze) */}
+                    {/* 3.º Lugar */}
                     {top3 && (
                       <div className="bg-[#121216] border border-amber-900/40 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
                         <span className="w-5 h-5 rounded-full bg-amber-900/80 text-amber-200 text-[10px] font-black flex items-center justify-center mb-1">
@@ -626,7 +680,6 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* RESTANTES JOGADORES (4.º AO 10.º) */}
                   {remainingSeasonStats.length > 0 && (
                     <div className="space-y-1.5 mt-2">
                       {remainingSeasonStats.map((s, idx) => (
@@ -653,9 +706,10 @@ export default function Home() {
               )}
             </div>
 
+            {/* Lista dos Jogos Anteriores */}
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                Jogos Anteriores
+                Histórico de Jogos
               </h3>
               {pastMatches.length === 0 ? (
                 <p className="text-xs text-zinc-500 bg-[#121215] p-3.5 rounded-xl border border-zinc-800/80 text-center">
@@ -694,11 +748,13 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* Cartão de Partilha Stories Fora do Ecrã */}
+      {/* =========================================================================
+          1. CARTÃO VISUAL DAS NOTAS DO UTILIZADOR (AS MINHAS NOTAS)
+          ========================================================================= */}
       {activeMatch && (
         <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
           <div
-            ref={shareCardRef}
+            ref={userCardRef}
             style={{
               width: '540px',
               minHeight: '960px',
@@ -714,8 +770,103 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
-                <div style={{ fontSize: '18px', fontWeight: 900 }}>
-                  BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 900 }}>
+                    BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 800, textTransform: 'uppercase' }}>
+                    As Minhas Notas do Jogo
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 800 }}>{activeMatch.competition}</div>
+                <div style={{ fontSize: '14px', fontWeight: 800 }}>{formatMatchTitle(activeMatch)}</div>
+              </div>
+            </div>
+
+            {userBestPlayer && (
+              <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <img
+                    src={userBestPlayer.photo_url}
+                    alt={userBestPlayer.name}
+                    crossOrigin="anonymous"
+                    style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
+                  />
+                  <div>
+                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor em Campo</span>
+                    <div style={{ fontSize: '16px', fontWeight: 800 }}>{userBestPlayer.name}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{ratings[userBestPlayer.id] || '—'}</div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
+              {players.map((p) => {
+                const score = ratings[p.id];
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      backgroundColor: '#121215',
+                      border: '1px solid #27272a',
+                      borderRadius: '10px',
+                      padding: '8px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+                      {p.name}
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: score ? '#ef4444' : '#52525b' }}>
+                      {score || '—'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '10px', color: '#71717a' }}>Vota também em</span>
+              <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          2. CARTÃO VISUAL DAS NOTAS DOS ADEPTOS (COMUNIDADE)
+          ========================================================================= */}
+      {activeMatch && (
+        <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+          <div
+            ref={communityCardRef}
+            style={{
+              width: '540px',
+              minHeight: '960px',
+              backgroundColor: '#09090b',
+              color: '#ffffff',
+              padding: '36px 28px',
+              fontFamily: 'sans-serif',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 900 }}>
+                    BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>
+                    Notas Médias dos Adeptos
+                  </div>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -725,7 +876,7 @@ export default function Home() {
             </div>
 
             {motm && (
-              <div style={{ margin: '20px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #27272a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img
                     src={motm.photo_url}
@@ -734,7 +885,7 @@ export default function Home() {
                     style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
                   />
                   <div>
-                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ Homem do Jogo</span>
+                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ Homem do Jogo da Comunidade</span>
                     <div style={{ fontSize: '16px', fontWeight: 800 }}>{motm.player_name}</div>
                   </div>
                 </div>
@@ -765,7 +916,7 @@ export default function Home() {
             </div>
 
             <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '10px', color: '#71717a' }}>Projeto independente de adeptos</span>
+              <span style={{ fontSize: '10px', color: '#71717a' }}>Votações da Comunidade</span>
               <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
             </div>
           </div>
