@@ -38,6 +38,12 @@ interface SeasonStat {
   total_votes: number;
 }
 
+interface MatchPlayerScore {
+  match_id: string;
+  player_id: string;
+  avg_score: number;
+}
+
 const POSITION_ORDER: Record<string, number> = {
   'GR': 1,
   'DEF': 2,
@@ -55,6 +61,7 @@ function getScoreTheme(score: number) {
       border: 'border-emerald-500/80',
       text: 'text-emerald-400',
       glow: 'shadow-[0_0_15px_rgba(16,185,129,0.35)]',
+      matrixBg: 'bg-emerald-950/80 border-emerald-600/70 text-emerald-400',
     };
   }
   if (score >= 6) {
@@ -63,6 +70,7 @@ function getScoreTheme(score: number) {
       border: 'border-teal-500/80',
       text: 'text-teal-400',
       glow: 'shadow-[0_0_12px_rgba(20,184,166,0.3)]',
+      matrixBg: 'bg-teal-950/80 border-teal-600/70 text-teal-400',
     };
   }
   if (score >= 5) {
@@ -71,6 +79,7 @@ function getScoreTheme(score: number) {
       border: 'border-amber-500/80',
       text: 'text-amber-400',
       glow: 'shadow-[0_0_12px_rgba(245,158,11,0.25)]',
+      matrixBg: 'bg-amber-950/80 border-amber-600/70 text-amber-400',
     };
   }
   return {
@@ -78,6 +87,7 @@ function getScoreTheme(score: number) {
     border: 'border-red-600/80',
     text: 'text-red-400',
     glow: 'shadow-[0_0_12px_rgba(239,68,68,0.25)]',
+    matrixBg: 'bg-rose-950/80 border-rose-600/70 text-rose-400',
   };
 }
 
@@ -131,6 +141,12 @@ function formatMatchTitle(match: Match) {
   return isHome ? `SL Benfica vs ${match.opponent}` : `${match.opponent} vs SL Benfica`;
 }
 
+// Abreviação de 3 letras para o adversário (estilo F1: POR, SPO, BRA...)
+function getOpponentAbbr(name: string) {
+  const clean = name.replace(/^(FC|SC|CD|GD|SL)\s+/i, '').trim();
+  return clean.substring(0, 3).toUpperCase();
+}
+
 export default function Home() {
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
@@ -138,9 +154,10 @@ export default function Home() {
   const [stats, setStats] = useState<Stat[]>([]);
   const [seasonStats, setSeasonStats] = useState<SeasonStat[]>([]);
   const [pastMatches, setPastMatches] = useState<Match[]>([]);
+  const [matrixScores, setMatrixScores] = useState<Record<string, Record<string, number>>>({});
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [hasVoted, setHasVoted] = useState(false);
-  const [view, setView] = useState<'vote' | 'results' | 'history'>('vote');
+  const [view, setView] = useState<'vote' | 'results' | 'history' | 'matrix'>('vote');
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
   const [generatingUserCard, setGeneratingUserCard] = useState(false);
@@ -184,8 +201,8 @@ export default function Home() {
           setPlayers(sorted);
         }
 
-        // 3. VERIFICAR SE O DISPOSITIVO JÁ SUBMETEU NESTE JOGO
-        let voterToken = localStorage.getItem('voter_token');
+        // 3. Verificar se já votou
+        const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
         if (voterToken) {
@@ -203,7 +220,6 @@ export default function Home() {
             });
             setRatings(userScores);
             setHasVoted(true);
-            // Salta diretamente para os Resultados com o botão de gerar cartão
             setView('results');
           }
         }
@@ -217,7 +233,7 @@ export default function Home() {
         setView('history');
       }
 
-      // 4. Procurar próximo jogo agendado
+      // 4. Próximo jogo agendado
       const { data: next } = await supabase
         .from('matches')
         .select('*')
@@ -231,7 +247,7 @@ export default function Home() {
         setUpcomingMatch(next as Match);
       }
 
-      loadHistory();
+      loadHistoryAndMatrix();
     }
     loadData();
   }, []);
@@ -263,14 +279,34 @@ export default function Home() {
     if (data) setStats(data as Stat[]);
   }
 
-  async function loadHistory() {
+  async function loadHistoryAndMatrix() {
+    // Carregar jogos terminados por ordem cronológica (mais antigo -> mais recente para a grelha)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
       .eq('is_open_for_voting', false)
-      .order('date', { ascending: false })
-      .limit(15);
-    if (matches) setPastMatches(matches as Match[]);
+      .order('date', { ascending: true })
+      .limit(20);
+
+    if (matches) {
+      setPastMatches(matches as Match[]);
+
+      // Carregar todas as pontuações médias para construir a matriz
+      const { data: allScores } = await supabase
+        .from('match_player_stats')
+        .select('match_id, player_id, avg_score');
+
+      if (allScores) {
+        const matrixMap: Record<string, Record<string, number>> = {};
+        allScores.forEach((row: any) => {
+          if (!matrixMap[row.player_id]) {
+            matrixMap[row.player_id] = {};
+          }
+          matrixMap[row.player_id][row.match_id] = Number(row.avg_score);
+        });
+        setMatrixScores(matrixMap);
+      }
+    }
 
     const { data: season } = await supabase
       .from('season_player_stats')
@@ -372,18 +408,15 @@ export default function Home() {
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
-  // Melhor jogador segundo o utilizador
   const userBestPlayer = players
     .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
     .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
 
-  // Top 3 do Histórico
   const top1 = seasonStats[0] || null;
   const top2 = seasonStats[1] || null;
   const top3 = seasonStats[2] || null;
   const remainingSeasonStats = seasonStats.slice(3);
 
-  // Média global de todos os jogos
   const allSeasonScores = seasonStats.map((s) => Number(s.season_avg_score)).filter((n) => !isNaN(n) && n > 0);
   const globalAverage = allSeasonScores.length > 0
     ? (allSeasonScores.reduce((acc, curr) => acc + curr, 0) / allSeasonScores.length).toFixed(1)
@@ -441,24 +474,24 @@ export default function Home() {
           </div>
         )}
 
-        {/* Abas */}
-        <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4">
+        {/* 4 ABAS MODERNAS DE NAVEGAÇÃO */}
+        <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5">
           {activeMatch && (
             <>
               <button
                 onClick={() => setView('vote')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
                   view === 'vote' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                {hasVoted ? 'Os Teus Votos' : `Votar (${evaluatedCount}/${players.length})`}
+                {hasVoted ? 'Os Meus Votos' : `Votar (${evaluatedCount}/${players.length})`}
               </button>
               <button
                 onClick={() => {
                   loadStats(activeMatch.id);
                   setView('results');
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
                   view === 'results' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -468,14 +501,25 @@ export default function Home() {
           )}
           <button
             onClick={() => {
-              loadHistory();
+              loadHistoryAndMatrix();
               setView('history');
             }}
-            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
               view === 'history' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Histórico & Época
+            Época
+          </button>
+          <button
+            onClick={() => {
+              loadHistoryAndMatrix();
+              setView('matrix');
+            }}
+            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+              view === 'matrix' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            Matriz F1
           </button>
         </div>
 
@@ -484,7 +528,7 @@ export default function Home() {
           <>
             <div className="mb-3">
               <div className="flex justify-between text-[11px] font-medium text-zinc-400 mb-1">
-                <span>{hasVoted ? 'Votação gravada neste dispositivo' : 'Progresso das notas'}</span>
+                <span>{hasVoted ? 'Voto gravado no telemóvel' : 'Progresso das notas'}</span>
                 <span>{Math.round(progressPercent)}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
@@ -527,7 +571,7 @@ export default function Home() {
                           isRecentlyChanged ? 'scale-115' : 'scale-100'
                         } ${
                           currentScore && theme
-                            ? `${theme.bg}${theme.border} ${theme.text}${theme.glow}`
+                            ? `${theme.bg} ${theme.border} ${theme.text} ${theme.glow}`
                             : 'bg-zinc-900 border-zinc-800 text-zinc-600'
                         }`}
                       >
@@ -574,10 +618,9 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS (Aparece logo ao entrar se o dispositivo já tiver votado) */}
+        {/* VISTA 2: RESULTADOS */}
         {activeMatch && view === 'results' && (
           <div className="space-y-3">
-            {/* Bloco de Destaque para o Cartão dos Votos deste Dispositivo */}
             <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3">
               <div>
                 <span className="text-emerald-400 text-xs font-black uppercase tracking-wider block">
@@ -591,7 +634,6 @@ export default function Home() {
               </div>
 
               <div className="grid grid-cols-1 gap-2 pt-1">
-                {/* 1. CARTÃO DOS MEUS VOTOS (Se este dispositivo já votou) */}
                 {hasVoted && (
                   <button
                     onClick={handleGenerateUserCard}
@@ -605,7 +647,6 @@ export default function Home() {
                   </button>
                 )}
 
-                {/* 2. CARTÃO DA COMUNIDADE */}
                 <button
                   onClick={handleGenerateCommunityCard}
                   disabled={generatingCommunityCard}
@@ -619,7 +660,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Homem do Jogo */}
             {motm && Number(motm.avg_score) > 0 && (
               <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center">
                 <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
@@ -635,7 +675,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Lista dos Jogadores e Médias */}
             <div className="space-y-2">
               {stats.map((s, idx) => (
                 <div
@@ -664,7 +703,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO COM MÉDIA GLOBAL */}
+        {/* VISTA 3: HISTÓRICO GERAL (PODIO + JOGOS) */}
         {view === 'history' && (
           <div className="space-y-5">
             <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
@@ -698,9 +737,7 @@ export default function Home() {
                   <div className="grid grid-cols-3 gap-2 items-end pt-4 pb-2">
                     {top2 && (
                       <div className="bg-[#121216] border border-zinc-700/50 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
-                        <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-200 text-[10px] font-black flex items-center justify-center mb-1">
-                          2
-                        </span>
+                        <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-200 text-[10px] font-black flex items-center justify-center mb-1">2</span>
                         <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-600 mb-1.5">
                           <PlayerAvatar src={top2.photo_url} name={top2.player_name} />
                         </div>
@@ -712,9 +749,7 @@ export default function Home() {
                     {top1 && (
                       <div className="bg-gradient-to-b from-[#1c1710] to-[#121216] border-2 border-amber-500/70 rounded-2xl p-3 text-center relative flex flex-col items-center -translate-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
                         <span className="text-sm -mt-2 mb-0.5">👑</span>
-                        <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center mb-1 shadow">
-                          1
-                        </span>
+                        <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center mb-1 shadow">1</span>
                         <div className="w-14 h-14 rounded-2xl overflow-hidden bg-zinc-800 border-2 border-amber-400 mb-1.5 shadow">
                           <PlayerAvatar src={top1.photo_url} name={top1.player_name} />
                         </div>
@@ -725,9 +760,7 @@ export default function Home() {
 
                     {top3 && (
                       <div className="bg-[#121216] border border-amber-900/40 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
-                        <span className="w-5 h-5 rounded-full bg-amber-900/80 text-amber-200 text-[10px] font-black flex items-center justify-center mb-1">
-                          3
-                        </span>
+                        <span className="w-5 h-5 rounded-full bg-amber-900/80 text-amber-200 text-[10px] font-black flex items-center justify-center mb-1">3</span>
                         <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-amber-900/60 mb-1.5">
                           <PlayerAvatar src={top3.photo_url} name={top3.player_name} />
                         </div>
@@ -793,6 +826,134 @@ export default function Home() {
           </div>
         )}
 
+        {/* =========================================================================
+            VISTA 4: MATRIZ DE RENDIMENTO ESTILO FÓRMULA 1 (HEATMAP JOGO A JOGO)
+            ========================================================================= */}
+        {view === 'matrix' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
+                  Matriz de Rendimento
+                </h3>
+                <p className="text-[10px] text-zinc-500">Notas jogo a jogo ao longo da temporada</p>
+              </div>
+              <span className="text-[9px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded-md">
+                Arrasta ➔
+              </span>
+            </div>
+
+            {pastMatches.length === 0 || seasonStats.length === 0 ? (
+              <p className="text-xs text-zinc-500 bg-[#121215] p-4 rounded-xl border border-zinc-800/80 text-center">
+                Ainda não existem jogos registados suficientes para gerar a matriz.
+              </p>
+            ) : (
+              <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
+                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700">
+                  <table className="w-full text-left border-collapse min-w-[500px]">
+                    <thead>
+                      <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
+                        {/* Coluna Fixa do Jogador */}
+                        <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] min-w-[125px]">
+                          Jogador
+                        </th>
+
+                        {/* Colunas dos Jogos Disputados */}
+                        {pastMatches.map((m) => (
+                          <th key={m.id} className="py-2 px-2 text-center min-w-[42px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
+                            <span className="block text-[9px] text-zinc-300 font-black">{getOpponentAbbr(m.opponent)}</span>
+                            <span className="block text-[8px] text-zinc-500 font-semibold">{m.is_home !== false ? 'C' : 'F'}</span>
+                          </th>
+                        ))}
+
+                        {/* Média Acumulada */}
+                        <th className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90">
+                          Média[cite: 3]
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/50 text-xs">
+                      {seasonStats.map((p, idx) => {
+                        const playerScores = matrixScores[p.player_id] || {};
+                        const seasonTheme = getScoreTheme(Number(p.season_avg_score));
+
+                        return (
+                          <tr key={p.player_id} className="hover:bg-zinc-800/30 transition-colors">
+                            {/* Nome e Foto Fixos */}
+                            <td className="py-2 px-3 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-zinc-600 w-3">{idx + 1}</span>
+                                <div className="w-6 h-6 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
+                                  <PlayerAvatar src={p.photo_url} name={p.player_name} isCoach={p.position === 'TREINADOR'} />
+                                </div>
+                                <span className="font-bold text-white text-[11px] truncate max-w-[85px]">
+                                  {p.player_name}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Células de Cada Partida com Estilo F1 */}
+                            {pastMatches.map((m) => {
+                              const score = playerScores[m.id];
+                              const hasPlayed = score !== undefined && score > 0;
+                              const cellTheme = hasPlayed ? getScoreTheme(score) : null;
+
+                              return (
+                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50">
+                                  {hasPlayed ? (
+                                    <div className={`w-8 h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                      {score.toFixed(1)}
+                                    </div>
+                                  ) : (
+                                    <div className="w-8 h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                      —
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+
+                            {/* Coluna da Média Final */}
+                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
+                              <span className={`font-black text-xs ${seasonTheme.text}`}>
+                                {p.season_avg_score}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Legenda de Cores Tipo F1 */}
+                <div className="p-2.5 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-around text-[9px] font-bold text-zinc-400">
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-emerald-500"></span>
+                    <span>≥ 8.0</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-teal-500"></span>
+                    <span>6.0 - 7.9</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-amber-500"></span>
+                    <span>5.0 - 5.9</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-rose-500"></span>
+                    <span>&lt; 5.0</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-zinc-500">
+                    <span className="w-2.5 h-2.5 rounded bg-zinc-800 text-center leading-none">—</span>
+                    <span>Ausente</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Rodapé Legal */}
         <footer className="mt-12 pt-6 border-t border-zinc-800/50 text-center space-y-1">
           <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
@@ -804,67 +965,151 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* =========================================================================
-          1. CARTÃO VISUAL DAS NOTAS DO UTILIZADOR
-          ========================================================================= */}
+      {/* Cartões Invisíveis para html-to-image */}
       {activeMatch && (
-        <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
-          <div
-            ref={userCardRef}
-            style={{
-              width: '540px',
-              minHeight: '960px',
-              backgroundColor: '#09090b',
-              color: '#ffffff',
-              padding: '36px 28px',
-              fontFamily: 'sans-serif',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 900 }}>
-                    BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Os Meus Votos no Jogo
+        <>
+          {/* Cartão Pessoal */}
+          <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+            <div
+              ref={userCardRef}
+              style={{
+                width: '540px',
+                minHeight: '960px',
+                backgroundColor: '#09090b',
+                color: '#ffffff',
+                padding: '36px 28px',
+                fontFamily: 'sans-serif',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 900 }}>
+                      BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Os Meus Votos no Jogo
+                    </div>
                   </div>
                 </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 800 }}>{activeMatch.competition}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 800 }}>{formatMatchTitle(activeMatch)}</div>
+                </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 800 }}>{activeMatch.competition}</div>
-                <div style={{ fontSize: '14px', fontWeight: 800 }}>{formatMatchTitle(activeMatch)}</div>
+
+              {userBestPlayer && (
+                <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <img
+                      src={userBestPlayer.photo_url}
+                      alt={userBestPlayer.name}
+                      crossOrigin="anonymous"
+                      style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
+                    />
+                    <div>
+                      <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor em Campo</span>
+                      <div style={{ fontSize: '16px', fontWeight: 800 }}>{userBestPlayer.name}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{ratings[userBestPlayer.id] || '—'}</div>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
+                {players.map((p) => {
+                  const score = ratings[p.id];
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        backgroundColor: '#121215',
+                        border: '1px solid #27272a',
+                        borderRadius: '10px',
+                        padding: '8px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+                        {p.name}
+                      </span>
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: score ? '#ef4444' : '#52525b' }}>
+                        {score || '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: '#71717a' }}>Vota também em</span>
+                <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
               </div>
             </div>
+          </div>
 
-            {userBestPlayer && (
-              <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Cartão Comunidade */}
+          <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+            <div
+              ref={communityCardRef}
+              style={{
+                width: '540px',
+                minHeight: '960px',
+                backgroundColor: '#09090b',
+                color: '#ffffff',
+                padding: '36px 28px',
+                fontFamily: 'sans-serif',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <img
-                    src={userBestPlayer.photo_url}
-                    alt={userBestPlayer.name}
-                    crossOrigin="anonymous"
-                    style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
-                  />
+                  <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
                   <div>
-                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor em Campo</span>
-                    <div style={{ fontSize: '16px', fontWeight: 800 }}>{userBestPlayer.name}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 900 }}>
+                      BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Notas Médias dos Adeptos
+                    </div>
                   </div>
                 </div>
-                <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{ratings[userBestPlayer.id] || '—'}</div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 800 }}>{activeMatch.competition}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 800 }}>{formatMatchTitle(activeMatch)}</div>
+                </div>
               </div>
-            )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
-              {players.map((p) => {
-                const score = ratings[p.id];
-                return (
+              {motm && (
+                <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <img
+                      src={motm.photo_url}
+                      alt={motm.player_name}
+                      crossOrigin="anonymous"
+                      style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
+                    />
+                    <div>
+                      <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ Homem do Jogo da Comunidade</span>
+                      <div style={{ fontSize: '16px', fontWeight: 800 }}>{motm.player_name}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{motm.avg_score}</div>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
+                {stats.map((s) => (
                   <div
-                    key={p.id}
+                    key={s.player_id}
                     style={{
                       backgroundColor: '#121215',
                       border: '1px solid #27272a',
@@ -876,107 +1121,20 @@ export default function Home() {
                     }}
                   >
                     <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
-                      {p.name}
+                      {s.player_name}
                     </span>
-                    <span style={{ fontSize: '13px', fontWeight: 900, color: score ? '#ef4444' : '#52525b' }}>
-                      {score || '—'}
-                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#ef4444' }}>{s.avg_score}</span>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
 
-            <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '10px', color: '#71717a' }}>Vota também em</span>
-              <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
+              <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: '#71717a' }}>Votações da Comunidade</span>
+                <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          2. CARTÃO VISUAL DAS PONTUAÇÕES DOS ADEPTOS
-          ========================================================================= */}
-      {activeMatch && (
-        <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
-          <div
-            ref={communityCardRef}
-            style={{
-              width: '540px',
-              minHeight: '960px',
-              backgroundColor: '#09090b',
-              color: '#ffffff',
-              padding: '36px 28px',
-              fontFamily: 'sans-serif',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 900 }}>
-                    BENFICA<span style={{ color: '#dc2626' }}>VOTE</span>
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Notas Médias dos Adeptos
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 800 }}>{activeMatch.competition}</div>
-                <div style={{ fontSize: '14px', fontWeight: 800 }}>{formatMatchTitle(activeMatch)}</div>
-              </div>
-            </div>
-
-            {motm && (
-              <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <img
-                    src={motm.photo_url}
-                    alt={motm.player_name}
-                    crossOrigin="anonymous"
-                    style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
-                  />
-                  <div>
-                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ Homem do Jogo da Comunidade</span>
-                    <div style={{ fontSize: '16px', fontWeight: 800 }}>{motm.player_name}</div>
-                  </div>
-                </div>
-                <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{motm.avg_score}</div>
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
-              {stats.map((s) => (
-                <div
-                  key={s.player_id}
-                  style={{
-                    backgroundColor: '#121215',
-                    border: '1px solid #27272a',
-                    borderRadius: '10px',
-                    padding: '8px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
-                    {s.player_name}
-                  </span>
-                  <span style={{ fontSize: '13px', fontWeight: 900, color: '#ef4444' }}>{s.avg_score}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '10px', color: '#71717a' }}>Votações da Comunidade</span>
-              <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
-            </div>
-          </div>
-        </div>
+        </>
       )}
     </main>
   );
