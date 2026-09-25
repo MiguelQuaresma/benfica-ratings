@@ -165,7 +165,6 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
-      // 1. Procurar jogo ativo
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -177,7 +176,6 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
-        // 2. Carregar o plantel do jogo ativo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -197,7 +195,6 @@ export default function Home() {
           setPlayers(sorted);
         }
 
-        // 3. Verificar se já votou neste dispositivo
         const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
@@ -229,7 +226,6 @@ export default function Home() {
         setView('history');
       }
 
-      // 4. Próximo jogo agendado
       const { data: next } = await supabase
         .from('matches')
         .select('*')
@@ -276,7 +272,6 @@ export default function Home() {
   }
 
   async function loadHistoryAndMatrix() {
-    // 1. Carregar jogos passados
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -288,7 +283,6 @@ export default function Home() {
       setPastMatches(matches as Match[]);
     }
 
-    // 2. Carregar TODO o plantel registado no clube
     const { data: allPlayersData } = await supabase
       .from('players')
       .select('*');
@@ -303,7 +297,6 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
-    // 3. Carregar pontuações médias da comunidade
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -319,7 +312,6 @@ export default function Home() {
       setCommunityMatrixScores(matrixMap);
     }
 
-    // 4. Carregar votos históricos dados pelo dispositivo do utilizador
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -339,7 +331,6 @@ export default function Home() {
       }
     }
 
-    // 5. Carregar médias globais da temporada
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -466,10 +457,8 @@ export default function Home() {
   const seasonStatsMap = new Map(seasonStats.map((s) => [s.player_id, s]));
   const squadForMatrix = allSquad.length > 0 ? allSquad : (seasonStats as any);
 
-  // Determinar qual matriz de notas exibir consoante o modo selecionado
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
 
-  // Jogadores de campo
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
     .sort((a, b) => {
@@ -482,10 +471,8 @@ export default function Home() {
       return a.name.localeCompare(b.name);
     });
 
-  // Treinador isolado
   const coachForMatrix = squadForMatrix.find((p) => p.position === 'TREINADOR') || null;
 
-  // Cálculo da média do próprio utilizador para um dado jogador
   const getUserPlayerAverage = (playerId: string) => {
     const pScores = userMatrixScores[playerId];
     if (!pScores) return null;
@@ -903,7 +890,7 @@ export default function Home() {
         )}
 
         {/* =========================================================================
-            VISTA 4: PROGRESSO DE ÉPOCA (COM BOTÃO ALTERNADOR: OS MEUS VOTOS vs GERAL)
+            VISTA 4: PROGRESSO DE ÉPOCA (TREINADOR NO TOPO + PLANTEL COM ALTERNADOR)
             ========================================================================= */}
         {view === 'matrix' && (
           <div className="space-y-3">
@@ -921,7 +908,7 @@ export default function Home() {
               </span>
             </div>
 
-            {/* BOTÃO ALTERNADOR DE MODO (GERAL VS OS MEUS VOTOS) */}
+            {/* BOTÃO ALTERNADOR DE MODO */}
             <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
               <button
                 type="button"
@@ -958,7 +945,7 @@ export default function Home() {
                     <thead>
                       <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
                         <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] min-w-[130px]">
-                          Jogador
+                          Elemento
                         </th>
 
                         {pastMatches.map((m) => (
@@ -974,87 +961,19 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50 text-xs">
-                      {/* 1. SEÇÃO DE JOGADORES DE CAMPO */}
-                      {outfieldSquad.map((p, idx) => {
-                        const playerScores = activeMatrixScores[p.id] || {};
-                        const seasonEntry = seasonStatsMap.get(p.id);
-
-                        // Média a exibir na última coluna
-                        const userAvg = getUserPlayerAverage(p.id);
-                        const communityAvg = seasonEntry && Number(seasonEntry.season_avg_score) > 0
-                          ? Number(seasonEntry.season_avg_score).toFixed(1)
-                          : null;
-
-                        const displayAvg = progressMode === 'user' ? userAvg : communityAvg;
-                        const avgTheme = displayAvg ? getScoreTheme(Number(displayAvg)) : null;
-
-                        return (
-                          <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
-                            {/* Nome e Avatar Fixos */}
-                            <td className="py-2 px-3 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black text-zinc-600 w-3">{idx + 1}</span>
-                                <div className="w-6 h-6 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
-                                  <PlayerAvatar src={p.photo_url} name={p.name} />
-                                </div>
-                                <div className="min-w-0">
-                                  <span className="font-bold text-white text-[11px] truncate block max-w-[85px]">
-                                    {p.name}
-                                  </span>
-                                  <span className="text-[8px] text-zinc-500 uppercase font-semibold">{p.position}</span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Células de Cada Jogo */}
-                            {pastMatches.map((m) => {
-                              const score = playerScores[m.id];
-                              const hasPlayed = score !== undefined && score > 0;
-                              const cellTheme = hasPlayed ? getScoreTheme(score) : null;
-
-                              return (
-                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50">
-                                  {hasPlayed ? (
-                                    <div className={`w-8 h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
-                                      {score.toFixed(1)}
-                                    </div>
-                                  ) : (
-                                    <div className="w-8 h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
-                                      —
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            })}
-
-                            {/* Coluna da Média Final */}
-                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
-                              {displayAvg ? (
-                                <span className={`font-black text-xs ${avgTheme?.text}`}>
-                                  {displayAvg}
-                                </span>
-                              ) : (
-                                <span className="font-bold text-[11px] text-zinc-600">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {/* 2. LINHA SEPARADORA DO TREINADOR */}
+                      {/* 1. TREINADOR NO TOPO DA TABELA */}
                       {coachForMatrix && (
                         <>
-                          <tr className="bg-amber-950/20 border-t-2 border-amber-600/40">
+                          <tr className="bg-amber-950/20 border-b border-amber-600/30">
                             <td
                               colSpan={pastMatches.length + 2}
-                              className="py-1.5 px-3 text-[9px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
+                              className="py-1 px-3 text-[9px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
                             >
-                              👔 EQUIPA TÉCNICA / TREINADOR
+                              👔 TREINADOR
                             </td>
                           </tr>
 
-                          {/* 3. LINHA DO TREINADOR SEPARADA */}
-                          <tr key={coachForMatrix.id} className="bg-amber-950/10 hover:bg-amber-950/20 transition-colors">
+                          <tr key={coachForMatrix.id} className="bg-amber-950/10 hover:bg-amber-950/20 transition-colors border-b-2 border-zinc-800">
                             <td className="py-2.5 px-3 sticky left-0 z-10 bg-[#141210] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-l-2 border-amber-500">
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-black text-amber-500 w-3">★</span>
@@ -1070,7 +989,6 @@ export default function Home() {
                               </div>
                             </td>
 
-                            {/* Células das Notas do Treinador */}
                             {pastMatches.map((m) => {
                               const coachScores = activeMatrixScores[coachForMatrix.id] || {};
                               const score = coachScores[m.id];
@@ -1092,7 +1010,6 @@ export default function Home() {
                               );
                             })}
 
-                            {/* Média do Treinador */}
                             <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#191512]">
                               {(() => {
                                 const userCoachAvg = getUserPlayerAverage(coachForMatrix.id);
@@ -1113,8 +1030,80 @@ export default function Home() {
                               })()}
                             </td>
                           </tr>
+
+                          <tr className="bg-zinc-900/40 border-b border-zinc-800">
+                            <td
+                              colSpan={pastMatches.length + 2}
+                              className="py-1 px-3 text-[9px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
+                            >
+                              ⚽ PLANTEL
+                            </td>
+                          </tr>
                         </>
                       )}
+
+                      {/* 2. JOGADORES DE CAMPO */}
+                      {outfieldSquad.map((p, idx) => {
+                        const playerScores = activeMatrixScores[p.id] || {};
+                        const seasonEntry = seasonStatsMap.get(p.id);
+
+                        const userAvg = getUserPlayerAverage(p.id);
+                        const communityAvg = seasonEntry && Number(seasonEntry.season_avg_score) > 0
+                          ? Number(seasonEntry.season_avg_score).toFixed(1)
+                          : null;
+
+                        const displayAvg = progressMode === 'user' ? userAvg : communityAvg;
+                        const avgTheme = displayAvg ? getScoreTheme(Number(displayAvg)) : null;
+
+                        return (
+                          <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
+                            <td className="py-2 px-3 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-zinc-600 w-3">{idx + 1}</span>
+                                <div className="w-6 h-6 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
+                                  <PlayerAvatar src={p.photo_url} name={p.name} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="font-bold text-white text-[11px] truncate block max-w-[85px]">
+                                    {p.name}
+                                  </span>
+                                  <span className="text-[8px] text-zinc-500 uppercase font-semibold">{p.position}</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {pastMatches.map((m) => {
+                              const score = playerScores[m.id];
+                              const hasPlayed = score !== undefined && score > 0;
+                              const cellTheme = hasPlayed ? getScoreTheme(score) : null;
+
+                              return (
+                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50">
+                                  {hasPlayed ? (
+                                    <div className={`w-8 h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                      {score.toFixed(1)}
+                                    </div>
+                                  ) : (
+                                    <div className="w-8 h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                      —
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+
+                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
+                              {displayAvg ? (
+                                <span className={`font-black text-xs ${avgTheme?.text}`}>
+                                  {displayAvg}
+                                </span>
+                              ) : (
+                                <span className="font-bold text-[11px] text-zinc-600">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
