@@ -148,7 +148,9 @@ export default function Home() {
   const [stats, setStats] = useState<Stat[]>([]);
   const [seasonStats, setSeasonStats] = useState<SeasonStat[]>([]);
   const [pastMatches, setPastMatches] = useState<Match[]>([]);
-  const [matrixScores, setMatrixScores] = useState<Record<string, Record<string, number>>>({});
+  const [communityMatrixScores, setCommunityMatrixScores] = useState<Record<string, Record<string, number>>>({});
+  const [userMatrixScores, setUserMatrixScores] = useState<Record<string, Record<string, number>>>({});
+  const [progressMode, setProgressMode] = useState<'community' | 'user'>('community');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [hasVoted, setHasVoted] = useState(false);
   const [view, setView] = useState<'vote' | 'results' | 'history' | 'matrix'>('vote');
@@ -175,7 +177,7 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
-        // 2. Carregar o plantel do jogo
+        // 2. Carregar o plantel do jogo ativo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -301,7 +303,7 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
-    // 3. Carregar pontuações médias para construir a matriz
+    // 3. Carregar pontuações médias da comunidade
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -314,10 +316,30 @@ export default function Home() {
         }
         matrixMap[row.player_id][row.match_id] = Number(row.avg_score);
       });
-      setMatrixScores(matrixMap);
+      setCommunityMatrixScores(matrixMap);
     }
 
-    // 4. Carregar médias da temporada
+    // 4. Carregar votos históricos dados pelo dispositivo do utilizador
+    const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
+    if (voterToken) {
+      const { data: userAllVotes } = await supabase
+        .from('ratings')
+        .select('match_id, player_id, score')
+        .eq('user_id', voterToken);
+
+      if (userAllVotes) {
+        const userMap: Record<string, Record<string, number>> = {};
+        userAllVotes.forEach((row: any) => {
+          if (!userMap[row.player_id]) {
+            userMap[row.player_id] = {};
+          }
+          userMap[row.player_id][row.match_id] = Number(row.score);
+        });
+        setUserMatrixScores(userMap);
+      }
+    }
+
+    // 5. Carregar médias globais da temporada
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -336,7 +358,6 @@ export default function Home() {
     }, 280);
   };
 
-  // Submissão otimizada via rota de API com Upstash Redis
   const handleSubmit = async () => {
     if (!activeMatch) return;
     const playerIds = Object.keys(ratings);
@@ -366,6 +387,7 @@ export default function Home() {
 
       setHasVoted(true);
       await loadStats(activeMatch.id);
+      await loadHistoryAndMatrix();
       setView('results');
     } catch (err) {
       console.error(err);
@@ -444,7 +466,10 @@ export default function Home() {
   const seasonStatsMap = new Map(seasonStats.map((s) => [s.player_id, s]));
   const squadForMatrix = allSquad.length > 0 ? allSquad : (seasonStats as any);
 
-  // Jogadores de campo ordenados por média da época
+  // Determinar qual matriz de notas exibir consoante o modo selecionado
+  const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
+
+  // Jogadores de campo
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
     .sort((a, b) => {
@@ -459,6 +484,15 @@ export default function Home() {
 
   // Treinador isolado
   const coachForMatrix = squadForMatrix.find((p) => p.position === 'TREINADOR') || null;
+
+  // Cálculo da média do próprio utilizador para um dado jogador
+  const getUserPlayerAverage = (playerId: string) => {
+    const pScores = userMatrixScores[playerId];
+    if (!pScores) return null;
+    const scores = Object.values(pScores).filter((s) => typeof s === 'number' && s > 0);
+    if (scores.length === 0) return null;
+    return (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+  };
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
@@ -557,7 +591,7 @@ export default function Home() {
               view === 'matrix' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            Matriz F1
+            Progresso Época
           </button>
         </div>
 
@@ -869,25 +903,53 @@ export default function Home() {
         )}
 
         {/* =========================================================================
-            VISTA 4: MATRIZ DE RENDIMENTO (PLANTEL COMPLETO + TREINADOR SEPARADO)
+            VISTA 4: PROGRESSO DE ÉPOCA (COM BOTÃO ALTERNADOR: OS MEUS VOTOS vs GERAL)
             ========================================================================= */}
         {view === 'matrix' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
-                  Matriz de Rendimento F1
+                  Progresso de Época
                 </h3>
-                <p className="text-[10px] text-zinc-500">Plantel completo jogo a jogo na época</p>
+                <p className="text-[10px] text-zinc-500">
+                  {progressMode === 'user' ? 'As tuas notas ao longo da temporada' : 'Médias da comunidade jogo a jogo'}
+                </p>
               </div>
               <span className="text-[9px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded-md">
                 Arrasta ➔
               </span>
             </div>
 
+            {/* BOTÃO ALTERNADOR DE MODO (GERAL VS OS MEUS VOTOS) */}
+            <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setProgressMode('community')}
+                className={`flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  progressMode === 'community'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                👥 Geral Adeptos
+              </button>
+              <button
+                type="button"
+                onClick={() => setProgressMode('user')}
+                className={`flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  progressMode === 'user'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                👤 Os Meus Votos
+              </button>
+            </div>
+
             {pastMatches.length === 0 ? (
               <p className="text-xs text-zinc-500 bg-[#121215] p-4 rounded-xl border border-zinc-800/80 text-center">
-                Ainda não existem jogos registados no histórico para gerar a matriz.
+                Ainda não existem jogos registados no histórico para gerar o progresso.
               </p>
             ) : (
               <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
@@ -907,18 +969,24 @@ export default function Home() {
                         ))}
 
                         <th className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90">
-                          Média
+                          {progressMode === 'user' ? 'A Tua Média' : 'Média'}
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50 text-xs">
                       {/* 1. SEÇÃO DE JOGADORES DE CAMPO */}
                       {outfieldSquad.map((p, idx) => {
-                        const playerScores = matrixScores[p.id] || {};
+                        const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
-                        const hasSeasonScore = Boolean(seasonEntry && Number(seasonEntry.season_avg_score) > 0);
-                        const seasonScoreVal = hasSeasonScore ? Number(seasonEntry!.season_avg_score) : 0;
-                        const seasonTheme = hasSeasonScore ? getScoreTheme(seasonScoreVal) : null;
+
+                        // Média a exibir na última coluna
+                        const userAvg = getUserPlayerAverage(p.id);
+                        const communityAvg = seasonEntry && Number(seasonEntry.season_avg_score) > 0
+                          ? Number(seasonEntry.season_avg_score).toFixed(1)
+                          : null;
+
+                        const displayAvg = progressMode === 'user' ? userAvg : communityAvg;
+                        const avgTheme = displayAvg ? getScoreTheme(Number(displayAvg)) : null;
 
                         return (
                           <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
@@ -961,9 +1029,9 @@ export default function Home() {
 
                             {/* Coluna da Média Final */}
                             <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
-                              {hasSeasonScore ? (
-                                <span className={`font-black text-xs ${seasonTheme?.text}`}>
-                                  {seasonScoreVal.toFixed(1)}
+                              {displayAvg ? (
+                                <span className={`font-black text-xs ${avgTheme?.text}`}>
+                                  {displayAvg}
                                 </span>
                               ) : (
                                 <span className="font-bold text-[11px] text-zinc-600">—</span>
@@ -1004,7 +1072,7 @@ export default function Home() {
 
                             {/* Células das Notas do Treinador */}
                             {pastMatches.map((m) => {
-                              const coachScores = matrixScores[coachForMatrix.id] || {};
+                              const coachScores = activeMatrixScores[coachForMatrix.id] || {};
                               const score = coachScores[m.id];
                               const hasCoached = score !== undefined && score > 0;
                               const cellTheme = hasCoached ? getScoreTheme(score) : null;
@@ -1027,11 +1095,17 @@ export default function Home() {
                             {/* Média do Treinador */}
                             <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#191512]">
                               {(() => {
+                                const userCoachAvg = getUserPlayerAverage(coachForMatrix.id);
                                 const coachSeason = seasonStatsMap.get(coachForMatrix.id);
-                                const hasScore = Boolean(coachSeason && Number(coachSeason.season_avg_score) > 0);
-                                return hasScore ? (
+                                const commCoachAvg = coachSeason && Number(coachSeason.season_avg_score) > 0
+                                  ? Number(coachSeason.season_avg_score).toFixed(1)
+                                  : null;
+
+                                const displayCoachAvg = progressMode === 'user' ? userCoachAvg : commCoachAvg;
+
+                                return displayCoachAvg ? (
                                   <span className="font-black text-xs text-amber-400">
-                                    {Number(coachSeason!.season_avg_score).toFixed(1)}
+                                    {displayCoachAvg}
                                   </span>
                                 ) : (
                                   <span className="font-bold text-[11px] text-zinc-600">—</span>
@@ -1045,7 +1119,7 @@ export default function Home() {
                   </table>
                 </div>
 
-                {/* Legenda de Cores Tipo F1 */}
+                {/* Legenda de Cores */}
                 <div className="p-2.5 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-around text-[9px] font-bold text-zinc-400">
                   <div className="flex items-center gap-1">
                     <span className="w-2.5 h-2.5 rounded bg-emerald-500"></span>
@@ -1065,7 +1139,7 @@ export default function Home() {
                   </div>
                   <div className="flex items-center gap-1 text-zinc-500">
                     <span className="w-2.5 h-2.5 rounded bg-zinc-800 text-center leading-none">—</span>
-                    <span>Ausente</span>
+                    <span>{progressMode === 'user' ? 'Sem Voto' : 'Ausente'}</span>
                   </div>
                 </div>
               </div>
