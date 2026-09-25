@@ -38,12 +38,6 @@ interface SeasonStat {
   total_votes: number;
 }
 
-interface MatchPlayerScore {
-  match_id: string;
-  player_id: string;
-  avg_score: number;
-}
-
 const POSITION_ORDER: Record<string, number> = {
   'GR': 1,
   'DEF': 2,
@@ -141,7 +135,6 @@ function formatMatchTitle(match: Match) {
   return isHome ? `SL Benfica vs ${match.opponent}` : `${match.opponent} vs SL Benfica`;
 }
 
-// Abreviação de 3 letras para o adversário (estilo F1: POR, SPO, BRA...)
 function getOpponentAbbr(name: string) {
   const clean = name.replace(/^(FC|SC|CD|GD|SL)\s+/i, '').trim();
   return clean.substring(0, 3).toUpperCase();
@@ -151,6 +144,7 @@ export default function Home() {
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [allSquad, setAllSquad] = useState<Player[]>([]);
   const [stats, setStats] = useState<Stat[]>([]);
   const [seasonStats, setSeasonStats] = useState<SeasonStat[]>([]);
   const [pastMatches, setPastMatches] = useState<Match[]>([]);
@@ -201,7 +195,7 @@ export default function Home() {
           setPlayers(sorted);
         }
 
-        // 3. Verificar se já votou
+        // 3. Verificar se já votou neste dispositivo
         const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
@@ -280,7 +274,7 @@ export default function Home() {
   }
 
   async function loadHistoryAndMatrix() {
-    // Carregar jogos terminados por ordem cronológica (mais antigo -> mais recente para a grelha)
+    // 1. Carregar jogos passados
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -290,24 +284,40 @@ export default function Home() {
 
     if (matches) {
       setPastMatches(matches as Match[]);
-
-      // Carregar todas as pontuações médias para construir a matriz
-      const { data: allScores } = await supabase
-        .from('match_player_stats')
-        .select('match_id, player_id, avg_score');
-
-      if (allScores) {
-        const matrixMap: Record<string, Record<string, number>> = {};
-        allScores.forEach((row: any) => {
-          if (!matrixMap[row.player_id]) {
-            matrixMap[row.player_id] = {};
-          }
-          matrixMap[row.player_id][row.match_id] = Number(row.avg_score);
-        });
-        setMatrixScores(matrixMap);
-      }
     }
 
+    // 2. Carregar TODO o plantel registado no clube
+    const { data: allPlayersData } = await supabase
+      .from('players')
+      .select('*');
+
+    if (allPlayersData) {
+      const sortedSquad = (allPlayersData as Player[]).sort((a, b) => {
+        const orderA = POSITION_ORDER[a.position] || 99;
+        const orderB = POSITION_ORDER[b.position] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.name.localeCompare(b.name);
+      });
+      setAllSquad(sortedSquad);
+    }
+
+    // 3. Carregar pontuações médias para construir a matriz
+    const { data: allScores } = await supabase
+      .from('match_player_stats')
+      .select('match_id, player_id, avg_score');
+
+    if (allScores) {
+      const matrixMap: Record<string, Record<string, number>> = {};
+      allScores.forEach((row: any) => {
+        if (!matrixMap[row.player_id]) {
+          matrixMap[row.player_id] = {};
+        }
+        matrixMap[row.player_id][row.match_id] = Number(row.avg_score);
+      });
+      setMatrixScores(matrixMap);
+    }
+
+    // 4. Carregar médias da temporada
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -326,6 +336,7 @@ export default function Home() {
     }, 280);
   };
 
+  // Submissão otimizada via rota de API com Upstash Redis
   const handleSubmit = async () => {
     if (!activeMatch) return;
     const playerIds = Object.keys(ratings);
@@ -338,23 +349,30 @@ export default function Home() {
       localStorage.setItem('voter_token', voterId);
     }
 
-    const payload = playerIds.map((id) => ({
-      match_id: activeMatch.id,
-      player_id: id,
-      user_id: voterId,
-      score: ratings[id],
-    }));
+    try {
+      const res = await fetch('/api/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matchId: activeMatch.id,
+          voterId,
+          ratings,
+        }),
+      });
 
-    const { error } = await supabase.from('ratings').insert(payload);
-    setSubmitting(false);
+      if (!res.ok) {
+        throw new Error('Falha no registo do voto');
+      }
 
-    if (error && error.message.includes('unique')) {
-      alert('Já tinhas submetido a tua avaliação para esta partida.');
+      setHasVoted(true);
+      await loadStats(activeMatch.id);
+      setView('results');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao submeter as tuas notas. Tenta novamente.');
+    } finally {
+      setSubmitting(false);
     }
-
-    setHasVoted(true);
-    await loadStats(activeMatch.id);
-    setView('results');
   };
 
   const exportImage = async (ref: React.RefObject<HTMLDivElement | null>, defaultName: string, title: string) => {
@@ -412,15 +430,35 @@ export default function Home() {
     .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
     .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
 
-  const top1 = seasonStats[0] || null;
-  const top2 = seasonStats[1] || null;
-  const top3 = seasonStats[2] || null;
-  const remainingSeasonStats = seasonStats.slice(3);
+  const seasonFieldPlayers = seasonStats.filter((s) => s.position !== 'TREINADOR');
+  const top1 = seasonFieldPlayers[0] || null;
+  const top2 = seasonFieldPlayers[1] || null;
+  const top3 = seasonFieldPlayers[2] || null;
+  const remainingSeasonStats = seasonFieldPlayers.slice(3);
 
   const allSeasonScores = seasonStats.map((s) => Number(s.season_avg_score)).filter((n) => !isNaN(n) && n > 0);
   const globalAverage = allSeasonScores.length > 0
     ? (allSeasonScores.reduce((acc, curr) => acc + curr, 0) / allSeasonScores.length).toFixed(1)
     : '0.0';
+
+  const seasonStatsMap = new Map(seasonStats.map((s) => [s.player_id, s]));
+  const squadForMatrix = allSquad.length > 0 ? allSquad : (seasonStats as any);
+
+  // Jogadores de campo ordenados por média da época
+  const outfieldSquad = squadForMatrix
+    .filter((p) => p.position !== 'TREINADOR')
+    .sort((a, b) => {
+      const avgA = Number(seasonStatsMap.get(a.id)?.season_avg_score || 0);
+      const avgB = Number(seasonStatsMap.get(b.id)?.season_avg_score || 0);
+      if (avgA !== avgB) return avgB - avgA;
+      const orderA = POSITION_ORDER[a.position] || 99;
+      const orderB = POSITION_ORDER[b.position] || 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name);
+    });
+
+  // Treinador isolado
+  const coachForMatrix = squadForMatrix.find((p) => p.position === 'TREINADOR') || null;
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
@@ -474,7 +512,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 4 ABAS MODERNAS DE NAVEGAÇÃO */}
+        {/* 4 ABAS MODERNAS */}
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5">
           {activeMatch && (
             <>
@@ -557,12 +595,16 @@ export default function Home() {
                   >
                     <div className="p-3 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700/50 flex-shrink-0">
+                        <div className={`w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 flex-shrink-0 border ${
+                          isCoach ? 'border-amber-500/50' : 'border-zinc-700/50'
+                        }`}>
                           <PlayerAvatar src={p.photo_url} name={p.name} isCoach={isCoach} />
                         </div>
                         <div>
                           <p className="font-bold text-sm text-white">{p.name}</p>
-                          <span className="text-[10px] text-zinc-500 font-medium">{p.position}</span>
+                          <span className={`text-[10px] font-medium ${isCoach ? 'text-amber-400' : 'text-zinc-500'}`}>
+                            {p.position}
+                          </span>
                         </div>
                       </div>
 
@@ -703,7 +745,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO GERAL (PODIO + JOGOS) */}
+        {/* VISTA 3: HISTÓRICO GERAL */}
         {view === 'history' && (
           <div className="space-y-5">
             <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
@@ -723,12 +765,12 @@ export default function Home() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">
-                  Top da Temporada
+                  Top da Temporada (Jogadores)
                 </h3>
                 <span className="text-[10px] text-zinc-500 font-medium">Médias globais</span>
               </div>
 
-              {seasonStats.length === 0 ? (
+              {seasonFieldPlayers.length === 0 ? (
                 <p className="text-xs text-zinc-500 bg-[#121215] p-3.5 rounded-xl border border-zinc-800/80 text-center">
                   Sem dados registados nesta época.
                 </p>
@@ -827,25 +869,25 @@ export default function Home() {
         )}
 
         {/* =========================================================================
-            VISTA 4: MATRIZ DE RENDIMENTO ESTILO FÓRMULA 1 (HEATMAP JOGO A JOGO)
+            VISTA 4: MATRIZ DE RENDIMENTO (PLANTEL COMPLETO + TREINADOR SEPARADO)
             ========================================================================= */}
         {view === 'matrix' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
-                  Matriz de Rendimento
+                  Matriz de Rendimento F1
                 </h3>
-                <p className="text-[10px] text-zinc-500">Notas jogo a jogo ao longo da temporada</p>
+                <p className="text-[10px] text-zinc-500">Plantel completo jogo a jogo na época</p>
               </div>
               <span className="text-[9px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded-md">
                 Arrasta ➔
               </span>
             </div>
 
-            {pastMatches.length === 0 || seasonStats.length === 0 ? (
+            {pastMatches.length === 0 ? (
               <p className="text-xs text-zinc-500 bg-[#121215] p-4 rounded-xl border border-zinc-800/80 text-center">
-                Ainda não existem jogos registados suficientes para gerar a matriz.
+                Ainda não existem jogos registados no histórico para gerar a matriz.
               </p>
             ) : (
               <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
@@ -853,46 +895,50 @@ export default function Home() {
                   <table className="w-full text-left border-collapse min-w-[500px]">
                     <thead>
                       <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                        {/* Coluna Fixa do Jogador */}
-                        <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] min-w-[125px]">
+                        <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] min-w-[130px]">
                           Jogador
                         </th>
 
-                        {/* Colunas dos Jogos Disputados */}
                         {pastMatches.map((m) => (
-                          <th key={m.id} className="py-2 px-2 text-center min-w-[42px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
+                          <th key={m.id} className="py-2 px-2 text-center min-w-[44px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
                             <span className="block text-[9px] text-zinc-300 font-black">{getOpponentAbbr(m.opponent)}</span>
                             <span className="block text-[8px] text-zinc-500 font-semibold">{m.is_home !== false ? 'C' : 'F'}</span>
                           </th>
                         ))}
 
-                        {/* Média Acumulada */}
                         <th className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90">
-                          Média[cite: 3]
+                          Média
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50 text-xs">
-                      {seasonStats.map((p, idx) => {
-                        const playerScores = matrixScores[p.player_id] || {};
-                        const seasonTheme = getScoreTheme(Number(p.season_avg_score));
+                      {/* 1. SEÇÃO DE JOGADORES DE CAMPO */}
+                      {outfieldSquad.map((p, idx) => {
+                        const playerScores = matrixScores[p.id] || {};
+                        const seasonEntry = seasonStatsMap.get(p.id);
+                        const hasSeasonScore = Boolean(seasonEntry && Number(seasonEntry.season_avg_score) > 0);
+                        const seasonScoreVal = hasSeasonScore ? Number(seasonEntry!.season_avg_score) : 0;
+                        const seasonTheme = hasSeasonScore ? getScoreTheme(seasonScoreVal) : null;
 
                         return (
-                          <tr key={p.player_id} className="hover:bg-zinc-800/30 transition-colors">
-                            {/* Nome e Foto Fixos */}
+                          <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
+                            {/* Nome e Avatar Fixos */}
                             <td className="py-2 px-3 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-black text-zinc-600 w-3">{idx + 1}</span>
                                 <div className="w-6 h-6 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
-                                  <PlayerAvatar src={p.photo_url} name={p.player_name} isCoach={p.position === 'TREINADOR'} />
+                                  <PlayerAvatar src={p.photo_url} name={p.name} />
                                 </div>
-                                <span className="font-bold text-white text-[11px] truncate max-w-[85px]">
-                                  {p.player_name}
-                                </span>
+                                <div className="min-w-0">
+                                  <span className="font-bold text-white text-[11px] truncate block max-w-[85px]">
+                                    {p.name}
+                                  </span>
+                                  <span className="text-[8px] text-zinc-500 uppercase font-semibold">{p.position}</span>
+                                </div>
                               </div>
                             </td>
 
-                            {/* Células de Cada Partida com Estilo F1 */}
+                            {/* Células de Cada Jogo */}
                             {pastMatches.map((m) => {
                               const score = playerScores[m.id];
                               const hasPlayed = score !== undefined && score > 0;
@@ -915,13 +961,86 @@ export default function Home() {
 
                             {/* Coluna da Média Final */}
                             <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
-                              <span className={`font-black text-xs ${seasonTheme.text}`}>
-                                {p.season_avg_score}
-                              </span>
+                              {hasSeasonScore ? (
+                                <span className={`font-black text-xs ${seasonTheme?.text}`}>
+                                  {seasonScoreVal.toFixed(1)}
+                                </span>
+                              ) : (
+                                <span className="font-bold text-[11px] text-zinc-600">—</span>
+                              )}
                             </td>
                           </tr>
                         );
                       })}
+
+                      {/* 2. LINHA SEPARADORA DO TREINADOR */}
+                      {coachForMatrix && (
+                        <>
+                          <tr className="bg-amber-950/20 border-t-2 border-amber-600/40">
+                            <td
+                              colSpan={pastMatches.length + 2}
+                              className="py-1.5 px-3 text-[9px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
+                            >
+                              👔 EQUIPA TÉCNICA / TREINADOR
+                            </td>
+                          </tr>
+
+                          {/* 3. LINHA DO TREINADOR SEPARADA */}
+                          <tr key={coachForMatrix.id} className="bg-amber-950/10 hover:bg-amber-950/20 transition-colors">
+                            <td className="py-2.5 px-3 sticky left-0 z-10 bg-[#141210] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-l-2 border-amber-500">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-amber-500 w-3">★</span>
+                                <div className="w-6 h-6 rounded-md overflow-hidden bg-amber-950/60 flex-shrink-0 border border-amber-500/60">
+                                  <PlayerAvatar src={coachForMatrix.photo_url} name={coachForMatrix.name} isCoach={true} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="font-black text-amber-200 text-[11px] truncate block max-w-[85px]">
+                                    {coachForMatrix.name}
+                                  </span>
+                                  <span className="text-[8px] text-amber-400/80 uppercase font-black">Mister</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Células das Notas do Treinador */}
+                            {pastMatches.map((m) => {
+                              const coachScores = matrixScores[coachForMatrix.id] || {};
+                              const score = coachScores[m.id];
+                              const hasCoached = score !== undefined && score > 0;
+                              const cellTheme = hasCoached ? getScoreTheme(score) : null;
+
+                              return (
+                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50 bg-amber-950/5">
+                                  {hasCoached ? (
+                                    <div className={`w-8 h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                      {score.toFixed(1)}
+                                    </div>
+                                  ) : (
+                                    <div className="w-8 h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                      —
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+
+                            {/* Média do Treinador */}
+                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#191512]">
+                              {(() => {
+                                const coachSeason = seasonStatsMap.get(coachForMatrix.id);
+                                const hasScore = Boolean(coachSeason && Number(coachSeason.season_avg_score) > 0);
+                                return hasScore ? (
+                                  <span className="font-black text-xs text-amber-400">
+                                    {Number(coachSeason!.season_avg_score).toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-[11px] text-zinc-600">—</span>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        </>
+                      )}
                     </tbody>
                   </table>
                 </div>
