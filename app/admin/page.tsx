@@ -598,6 +598,7 @@ export default function AdminPage() {
                 >
                   <option value="Liga Portugal">Liga Portugal</option>
                   <option value="Liga dos Campeões">Liga dos Campeões</option>
+                  <option value="Liga Europa">Liga Europa</option>
                   <option value="Taça de Portugal">Taça de Portugal</option>
                   <option value="Taça da Liga">Taça da Liga</option>
                   <option value="Jogo de Treino / Teste">Jogo de Treino / Teste</option>
@@ -711,6 +712,7 @@ export default function AdminPage() {
             >
               <option value="Liga Portugal">Liga Portugal</option>
               <option value="Liga dos Campeões">Liga dos Campeões</option>
+              <option value="Liga Europa">Liga Europa</option>
               <option value="Taça de Portugal">Taça de Portugal</option>
               <option value="Taça da Liga">Taça da Liga</option>
             </select>
