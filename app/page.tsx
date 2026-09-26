@@ -586,6 +586,24 @@ export default function Home() {
         {/* VISTA 1: VOTAR */}
         {activeMatch && view === 'vote' && (
           <>
+            {/* BANNER CLARO DO JOGO A DECORRER */}
+            <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-red-900/40 shadow-sm flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-red-400">
+                    {activeMatch.competition} • {activeMatch.is_home !== false ? 'Estádio da Luz' : 'Fora'}
+                  </span>
+                </div>
+                <h2 className="text-sm font-black text-white">
+                  {formatMatchTitle(activeMatch)}
+                </h2>
+              </div>
+              <span className="text-[9px] font-bold text-zinc-400 bg-zinc-900/80 px-2 py-1 rounded-md border border-zinc-800">
+                Votação Aberta
+              </span>
+            </div>
+
             <div className="mb-3">
               <div className="flex justify-between text-[11px] font-medium text-zinc-400 mb-1">
                 <span>{hasVoted ? 'Voto gravado no telemóvel' : 'Progresso das notas'}</span>
