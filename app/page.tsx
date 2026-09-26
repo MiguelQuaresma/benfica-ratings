@@ -166,7 +166,6 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
-      // 1. Procurar jogo ativo
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -178,7 +177,6 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
-        // 2. Carregar o plantel do jogo ativo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -198,7 +196,6 @@ export default function Home() {
           setPlayers(sorted);
         }
 
-        // 3. Verificar se já votou neste dispositivo
         const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
@@ -230,7 +227,6 @@ export default function Home() {
         setView('history');
       }
 
-      // 4. Carregar jogos agendados para vir (excluindo testes)
       const nowIso = new Date().toISOString();
       const { data: upcomingList } = await supabase
         .from('matches')
@@ -284,7 +280,6 @@ export default function Home() {
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
-    // 1. Carregar APENAS jogos passados já jogados (data anterior à atual)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -299,7 +294,6 @@ export default function Home() {
       setPastMatches(matches as Match[]);
     }
 
-    // 2. Carregar todo o plantel
     const { data: allPlayersData } = await supabase
       .from('players')
       .select('*');
@@ -314,7 +308,6 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
-    // 3. Carregar pontuações médias da comunidade
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -330,7 +323,6 @@ export default function Home() {
       setCommunityMatrixScores(matrixMap);
     }
 
-    // 4. Carregar votos do próprio utilizador
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -350,7 +342,6 @@ export default function Home() {
       }
     }
 
-    // 5. Médias da temporada
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -503,49 +494,51 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
+      {/* Topo Alinhado e com Largura Responsiva */}
       <header className="border-b border-zinc-800/60 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <BenficaEmblem className="w-7 h-7" />
-            <h1 className="text-sm font-black tracking-tight uppercase">
+            <h1 className="text-sm md:text-base font-black tracking-tight uppercase">
               BENFICA<span className="text-red-600">VOTE</span>
             </h1>
           </div>
           {activeMatch ? (
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-red-400 bg-red-950/40 border border-red-800/40 px-2.5 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-red-400 bg-red-950/40 border border-red-800/40 px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
               A decorrer
             </span>
           ) : (
-            <span className="text-[10px] font-medium text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
+            <span className="text-[10px] md:text-xs font-medium text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
               Arquivo
             </span>
           )}
         </div>
       </header>
 
-      <div className="max-w-md mx-auto px-4 pt-4">
+      {/* Conteúdo Central Responsivo (Estreito em Mobile, Amplo em PC) */}
+      <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-4">
         {/* Contagem Decrescente do Próximo Encontro */}
         {upcomingMatch && (
-          <div className="mb-4 p-4 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
-            <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+          <div className="mb-4 p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
+            <span className="text-[10px] md:text-xs font-bold tracking-wider text-zinc-400 uppercase">
               Próximo Encontro • {upcomingMatch.is_home !== false ? 'Casa' : 'Fora'}
             </span>
-            <h2 className="text-base font-bold text-white mt-1">
+            <h2 className="text-base md:text-xl font-bold text-white mt-1">
               {formatMatchTitle(upcomingMatch)}
             </h2>
-            <p className="text-[11px] text-zinc-500">{upcomingMatch.competition}</p>
+            <p className="text-[11px] md:text-xs text-zinc-500">{upcomingMatch.competition}</p>
 
-            <div className="grid grid-cols-4 gap-2 mt-3 max-w-xs mx-auto">
+            <div className="grid grid-cols-4 gap-2 mt-3 max-w-xs md:max-w-sm mx-auto">
               {[
                 { label: 'DIAS', val: timeLeft.d },
                 { label: 'HORAS', val: timeLeft.h },
                 { label: 'MIN', val: timeLeft.m },
                 { label: 'SEG', val: timeLeft.s },
               ].map((t, idx) => (
-                <div key={idx} className="bg-zinc-900 py-1.5 rounded-xl border border-zinc-800/60">
-                  <span className="block text-base font-black text-red-500 leading-tight">{t.val}</span>
-                  <span className="text-[8px] font-bold text-zinc-500">{t.label}</span>
+                <div key={idx} className="bg-zinc-900 py-1.5 md:py-2 rounded-xl border border-zinc-800/60">
+                  <span className="block text-base md:text-xl font-black text-red-500 leading-tight">{t.val}</span>
+                  <span className="text-[8px] md:text-[9px] font-bold text-zinc-500">{t.label}</span>
                 </div>
               ))}
             </div>
@@ -553,12 +546,12 @@ export default function Home() {
         )}
 
         {/* 4 ABAS MODERNAS */}
-        <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5">
+        <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5 max-w-xl mx-auto">
           {activeMatch && (
             <>
               <button
                 onClick={() => setView('vote')}
-                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-bold rounded-lg transition-all ${
                   view === 'vote' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -569,7 +562,7 @@ export default function Home() {
                   loadStats(activeMatch.id);
                   setView('results');
                 }}
-                className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-bold rounded-lg transition-all ${
                   view === 'results' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -582,7 +575,7 @@ export default function Home() {
               loadHistoryAndMatrix();
               setView('history');
             }}
-            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+            className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-bold rounded-lg transition-all ${
               view === 'history' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
@@ -593,7 +586,7 @@ export default function Home() {
               loadHistoryAndMatrix();
               setView('matrix');
             }}
-            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+            className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-bold rounded-lg transition-all ${
               view === 'matrix' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
@@ -601,32 +594,32 @@ export default function Home() {
           </button>
         </div>
 
-        {/* VISTA 1: VOTAR */}
+        {/* VISTA 1: VOTAR (EM PC DIVIDE-SE EM 2 COLUNAS LADO A LADO) */}
         {activeMatch && view === 'vote' && (
           <>
-            <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-red-900/40 shadow-sm flex items-center justify-between">
+            <div className="mb-4 p-3.5 md:p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-red-900/40 shadow-sm flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-red-400">
+                  <span className="text-[10px] md:text-xs font-black uppercase tracking-wider text-red-400">
                     {activeMatch.competition} • {activeMatch.is_home !== false ? 'Estádio da Luz' : 'Fora'}
                   </span>
                 </div>
-                <h2 className="text-sm font-black text-white">
+                <h2 className="text-sm md:text-lg font-black text-white">
                   {formatMatchTitle(activeMatch)}
                 </h2>
               </div>
-              <span className="text-[9px] font-bold text-zinc-400 bg-zinc-900/80 px-2 py-1 rounded-md border border-zinc-800">
+              <span className="text-[9px] md:text-xs font-bold text-zinc-400 bg-zinc-900/80 px-2.5 py-1 rounded-md border border-zinc-800">
                 Votação Aberta
               </span>
             </div>
 
-            <div className="mb-3">
-              <div className="flex justify-between text-[11px] font-medium text-zinc-400 mb-1">
+            <div className="mb-4">
+              <div className="flex justify-between text-[11px] md:text-xs font-medium text-zinc-400 mb-1">
                 <span>{hasVoted ? 'Voto gravado no telemóvel' : 'Progresso das notas'}</span>
                 <span>{Math.round(progressPercent)}%</span>
               </div>
-              <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-red-600 transition-all duration-300"
                   style={{ width: `${progressPercent}%` }}
@@ -634,7 +627,8 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="space-y-2.5">
+            {/* Grelha de Jogadores: 1 coluna em mobile, 2 colunas em desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {players.map((p) => {
                 const currentScore = ratings[p.id];
                 const isCoach = p.position === 'TREINADOR';
@@ -696,19 +690,22 @@ export default function Home() {
                   </div>
                 );
               })}
+            </div>
 
+            {/* Botão de Submissão em Destaque */}
+            <div className="max-w-md mx-auto">
               {!hasVoted ? (
                 <button
                   onClick={handleSubmit}
                   disabled={submitting}
-                  className="w-full mt-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 shadow-md"
+                  className="w-full mt-5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs md:text-sm uppercase tracking-wider transition-all active:scale-98 shadow-md cursor-pointer"
                 >
                   {submitting ? 'A guardar votos...' : 'Submeter Avaliações'}
                 </button>
               ) : (
                 <button
                   onClick={() => setView('results')}
-                  className="w-full mt-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold py-3 rounded-xl text-xs uppercase tracking-wider border border-zinc-700 flex items-center justify-center gap-2"
+                  className="w-full mt-5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold py-3.5 rounded-xl text-xs md:text-sm uppercase tracking-wider border border-zinc-700 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   Ver Resultados e Gerar Cartões ↗
                 </button>
@@ -717,12 +714,12 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS */}
+        {/* VISTA 2: RESULTADOS (EM PC EXPANSIVO COM 2 COLUNAS) */}
         {activeMatch && view === 'results' && (
-          <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3">
+          <div className="space-y-4">
+            <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3 max-w-xl mx-auto">
               <div>
-                <span className="text-emerald-400 text-xs font-black uppercase tracking-wider block">
+                <span className="text-emerald-400 text-xs md:text-sm font-black uppercase tracking-wider block">
                   {hasVoted ? '✓ O teu voto está registado' : 'Resultados em Direto'}
                 </span>
                 <p className="text-xs text-zinc-400 mt-0.5">
@@ -732,12 +729,12 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                 {hasVoted && (
                   <button
                     onClick={handleGenerateUserCard}
                     disabled={generatingUserCard}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md"
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md cursor-pointer"
                   >
                     <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -749,7 +746,7 @@ export default function Home() {
                 <button
                   onClick={handleGenerateCommunityCard}
                   disabled={generatingCommunityCard}
-                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-200 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2 transition-all active:scale-98"
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-200 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer"
                 >
                   <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -760,21 +757,22 @@ export default function Home() {
             </div>
 
             {motm && Number(motm.avg_score) > 0 && (
-              <div className="p-4 rounded-2xl bg-[#121215] border border-zinc-800 text-center">
-                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
+              <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center max-w-sm mx-auto">
+                <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
                   ★ Homem do Jogo da Comunidade
                 </span>
-                <div className="w-16 h-16 mx-auto rounded-2xl overflow-hidden bg-zinc-800 border border-zinc-700 my-2">
+                <div className="w-16 h-16 md:w-20 md:h-20 mx-auto rounded-2xl overflow-hidden bg-zinc-800 border border-zinc-700 my-2">
                   <PlayerAvatar src={motm.photo_url} name={motm.player_name} />
                 </div>
-                <h3 className="text-sm font-bold text-white">{motm.player_name}</h3>
-                <div className="text-2xl font-black text-red-500 mt-0.5">
-                  {motm.avg_score} <span className="text-xs text-zinc-500 font-normal">/10</span>
+                <h3 className="text-sm md:text-base font-bold text-white">{motm.player_name}</h3>
+                <div className="text-2xl md:text-3xl font-black text-red-500 mt-0.5">
+                  {motm.avg_score} <span className="text-xs md:text-sm text-zinc-500 font-normal">/10</span>
                 </div>
               </div>
             )}
 
-            <div className="space-y-2">
+            {/* Lista de notas: 1 coluna em mobile, 2 colunas em PC */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {stats.map((s, idx) => (
                 <div
                   key={s.player_id}
@@ -786,14 +784,14 @@ export default function Home() {
                       <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
                     </div>
                     <div>
-                      <p className="font-bold text-xs text-white">{s.player_name}</p>
-                      <span className="text-[9px] text-zinc-500">
+                      <p className="font-bold text-xs md:text-sm text-white">{s.player_name}</p>
+                      <span className="text-[9px] md:text-[10px] text-zinc-500">
                         {s.position} • {s.total_votes} votos {ratings[s.player_id] ? `(A tua nota: ${ratings[s.player_id]})` : ''}
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-base font-black text-red-500">{s.avg_score}</span>
+                    <span className="text-base md:text-lg font-black text-red-500">{s.avg_score}</span>
                     <span className="text-[9px] text-zinc-500 font-medium"> /10</span>
                   </div>
                 </div>
@@ -804,28 +802,28 @@ export default function Home() {
 
         {/* VISTA 3: HISTÓRICO GERAL & CALENDÁRIO */}
         {view === 'history' && (
-          <div className="space-y-5">
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
+          <div className="space-y-6">
+            <div className="p-4 md:p-6 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
               <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-red-500 block">
+                <span className="text-[10px] md:text-xs font-black uppercase tracking-wider text-red-500 block">
                   Registo Acumulado
                 </span>
-                <h3 className="text-sm font-bold text-white">Média Global do Plantel</h3>
-                <p className="text-[11px] text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
+                <h3 className="text-sm md:text-lg font-bold text-white">Média Global do Plantel</h3>
+                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
               </div>
               <div className="text-right">
-                <span className="text-3xl font-black text-red-500">{globalAverage}</span>
-                <span className="text-xs text-zinc-500 font-bold"> /10</span>
+                <span className="text-3xl md:text-4xl font-black text-red-500">{globalAverage}</span>
+                <span className="text-xs md:text-sm text-zinc-500 font-bold"> /10</span>
               </div>
             </div>
 
             {/* TOP DA TEMPORADA */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">
+                <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400">
                   Top da Temporada (Jogadores)
                 </h3>
-                <span className="text-[10px] text-zinc-500 font-medium">Médias globais</span>
+                <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Médias globais</span>
               </div>
 
               {seasonFieldPlayers.length === 0 ? (
@@ -834,44 +832,44 @@ export default function Home() {
                 </p>
               ) : (
                 <>
-                  <div className="grid grid-cols-3 gap-2 items-end pt-4 pb-2">
+                  <div className="grid grid-cols-3 gap-2 md:gap-4 items-end pt-4 pb-2 max-w-xl mx-auto">
                     {top2 && (
-                      <div className="bg-[#121216] border border-zinc-700/50 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
-                        <span className="w-5 h-5 rounded-full bg-zinc-700 text-zinc-200 text-[10px] font-black flex items-center justify-center mb-1">2</span>
-                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-600 mb-1.5">
+                      <div className="bg-[#121216] border border-zinc-700/50 rounded-2xl p-2.5 md:p-4 text-center relative flex flex-col items-center">
+                        <span className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-zinc-700 text-zinc-200 text-[10px] md:text-xs font-black flex items-center justify-center mb-1">2</span>
+                        <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-600 mb-1.5">
                           <PlayerAvatar src={top2.photo_url} name={top2.player_name} />
                         </div>
-                        <p className="font-bold text-[11px] text-white truncate w-full">{top2.player_name}</p>
-                        <span className="text-xs font-black text-zinc-300 mt-0.5">{top2.season_avg_score}</span>
+                        <p className="font-bold text-[11px] md:text-xs text-white truncate w-full">{top2.player_name}</p>
+                        <span className="text-xs md:text-sm font-black text-zinc-300 mt-0.5">{top2.season_avg_score}</span>
                       </div>
                     )}
 
                     {top1 && (
-                      <div className="bg-gradient-to-b from-[#1c1710] to-[#121216] border-2 border-amber-500/70 rounded-2xl p-3 text-center relative flex flex-col items-center -translate-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
-                        <span className="text-sm -mt-2 mb-0.5">👑</span>
-                        <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center mb-1 shadow">1</span>
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden bg-zinc-800 border-2 border-amber-400 mb-1.5 shadow">
+                      <div className="bg-gradient-to-b from-[#1c1710] to-[#121216] border-2 border-amber-500/70 rounded-2xl p-3 md:p-5 text-center relative flex flex-col items-center -translate-y-2 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+                        <span className="text-sm md:text-base -mt-2 mb-0.5">👑</span>
+                        <span className="w-6 h-6 md:w-7 md:h-7 rounded-full bg-amber-500 text-black text-[11px] md:text-xs font-black flex items-center justify-center mb-1 shadow">1</span>
+                        <div className="w-14 h-14 md:w-20 md:h-20 rounded-2xl overflow-hidden bg-zinc-800 border-2 border-amber-400 mb-1.5 shadow">
                           <PlayerAvatar src={top1.photo_url} name={top1.player_name} />
                         </div>
-                        <p className="font-black text-xs text-white truncate w-full">{top1.player_name}</p>
-                        <span className="text-sm font-black text-amber-400 mt-0.5">{top1.season_avg_score}</span>
+                        <p className="font-black text-xs md:text-sm text-white truncate w-full">{top1.player_name}</p>
+                        <span className="text-sm md:text-base font-black text-amber-400 mt-0.5">{top1.season_avg_score}</span>
                       </div>
                     )}
 
                     {top3 && (
-                      <div className="bg-[#121216] border border-amber-900/40 rounded-2xl p-2.5 text-center relative flex flex-col items-center">
-                        <span className="w-5 h-5 rounded-full bg-amber-900/80 text-amber-200 text-[10px] font-black flex items-center justify-center mb-1">3</span>
-                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 border border-amber-900/60 mb-1.5">
+                      <div className="bg-[#121216] border border-amber-900/40 rounded-2xl p-2.5 md:p-4 text-center relative flex flex-col items-center">
+                        <span className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-amber-900/80 text-amber-200 text-[10px] md:text-xs font-black flex items-center justify-center mb-1">3</span>
+                        <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl overflow-hidden bg-zinc-800 border border-amber-900/60 mb-1.5">
                           <PlayerAvatar src={top3.photo_url} name={top3.player_name} />
                         </div>
-                        <p className="font-bold text-[11px] text-white truncate w-full">{top3.player_name}</p>
-                        <span className="text-xs font-black text-amber-500 mt-0.5">{top3.season_avg_score}</span>
+                        <p className="font-bold text-[11px] md:text-xs text-white truncate w-full">{top3.player_name}</p>
+                        <span className="text-xs md:text-sm font-black text-amber-500 mt-0.5">{top3.season_avg_score}</span>
                       </div>
                     )}
                   </div>
 
                   {remainingSeasonStats.length > 0 && (
-                    <div className="space-y-1.5 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
                       {remainingSeasonStats.map((s, idx) => (
                         <div
                           key={s.player_id}
@@ -885,7 +883,7 @@ export default function Home() {
                             <p className="font-bold text-xs text-white truncate">{s.player_name}</p>
                           </div>
                           <div className="text-right">
-                            <span className="text-xs font-black text-red-500">{s.season_avg_score}</span>
+                            <span className="text-xs md:text-sm font-black text-red-500">{s.season_avg_score}</span>
                             <span className="text-[8px] text-zinc-500"> /10</span>
                           </div>
                         </div>
@@ -899,22 +897,22 @@ export default function Home() {
             {/* SEÇÃO: PRÓXIMOS JOGOS AGENDADOS (CELTIC, VITÓRIA, ETC.) */}
             {allUpcomingMatches.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                <h3 className="text-xs md:text-sm font-bold uppercase tracking-wider text-zinc-400 mb-2">
                   Próximos Encontros
                 </h3>
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {allUpcomingMatches.map((m) => (
                     <div
                       key={m.id}
                       className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
                     >
                       <div>
-                        <p className="text-xs font-bold text-white">{formatMatchTitle(m)}</p>
-                        <span className="text-[10px] text-zinc-500">
+                        <p className="text-xs md:text-sm font-bold text-white">{formatMatchTitle(m)}</p>
+                        <span className="text-[10px] md:text-xs text-zinc-500">
                           {m.competition} • {new Date(m.date).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <span className="text-[10px] font-black text-amber-400 bg-amber-950/40 border border-amber-800/40 px-2.5 py-0.5 rounded-md">
+                      <span className="text-[10px] md:text-xs font-black text-amber-400 bg-amber-950/40 border border-amber-800/40 px-2.5 py-1 rounded-md">
                         Por Jogar
                       </span>
                     </div>
@@ -925,25 +923,25 @@ export default function Home() {
 
             {/* SEÇÃO: HISTÓRICO DE JOGOS PASSADOS (TERMINADOS) */}
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                Histórico de Jogos
+              <h3 className="text-xs md:text-sm font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                Histórico de Jogos Disputados
               </h3>
               {pastMatches.length === 0 ? (
                 <p className="text-xs text-zinc-500 bg-[#121215] p-3.5 rounded-xl border border-zinc-800/80 text-center">
                   Ainda não foram disputados jogos oficiais nesta época.
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {pastMatches.slice().reverse().map((m) => (
                     <div
                       key={m.id}
                       className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
                     >
                       <div>
-                        <p className="text-xs font-bold text-white">{formatMatchTitle(m)}</p>
-                        <span className="text-[10px] text-zinc-500">{m.competition}</span>
+                        <p className="text-xs md:text-sm font-bold text-white">{formatMatchTitle(m)}</p>
+                        <span className="text-[10px] md:text-xs text-zinc-500">{m.competition}</span>
                       </div>
-                      <span className="text-[10px] font-medium text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                      <span className="text-[10px] md:text-xs font-medium text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
                         Terminado
                       </span>
                     </div>
@@ -954,29 +952,29 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA (MATRIZ COMPLETA) */}
         {view === 'matrix' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-red-500">
+                <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-red-500">
                   Progresso de Época
                 </h3>
-                <p className="text-[10px] text-zinc-500">
+                <p className="text-[10px] md:text-xs text-zinc-500">
                   {progressMode === 'user' ? 'As tuas notas ao longo da temporada' : 'Médias da comunidade jogo a jogo'}
                 </p>
               </div>
-              <span className="text-[9px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded-md">
+              <span className="text-[9px] md:text-[10px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-md">
                 Arrasta ➔
               </span>
             </div>
 
             {/* BOTÃO ALTERNADOR DE MODO */}
-            <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
+            <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 max-w-sm">
               <button
                 type="button"
                 onClick={() => setProgressMode('community')}
-                className={`flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
                   progressMode === 'community'
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'text-zinc-400 hover:text-white'
@@ -987,7 +985,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setProgressMode('user')}
-                className={`flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
                   progressMode === 'user'
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'text-zinc-400 hover:text-white'
@@ -1006,19 +1004,19 @@ export default function Home() {
                 <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                        <th className="py-2 px-2 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] w-fit whitespace-nowrap">
+                      <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] md:text-xs font-black text-zinc-400 uppercase tracking-wider">
+                        <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] w-fit whitespace-nowrap">
                           Nome
                         </th>
 
                         {pastMatches.map((m) => (
-                          <th key={m.id} className="py-2 px-1.5 text-center min-w-[42px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
-                            <span className="block text-[9px] text-zinc-300 font-black">{getOpponentAbbr(m.opponent)}</span>
-                            <span className="block text-[8px] text-zinc-500 font-semibold">{m.is_home !== false ? 'C' : 'F'}</span>
+                          <th key={m.id} className="py-2 px-2 text-center min-w-[48px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
+                            <span className="block text-[10px] md:text-xs text-zinc-300 font-black">{getOpponentAbbr(m.opponent)}</span>
+                            <span className="block text-[8px] md:text-[9px] text-zinc-500 font-semibold">{m.is_home !== false ? 'C' : 'F'}</span>
                           </th>
                         ))}
 
-                        <th className="py-2 px-2 text-center border-l border-zinc-800 min-w-[50px] text-red-400 bg-zinc-900/90">
+                        <th className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90">
                           {progressMode === 'user' ? 'Nota' : 'Média'}
                         </th>
                       </tr>
@@ -1030,20 +1028,20 @@ export default function Home() {
                           <tr className="bg-amber-950/20 border-b border-amber-600/30">
                             <td
                               colSpan={pastMatches.length + 2}
-                              className="py-1 px-2 text-[9px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
+                              className="py-1 px-3 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
                             >
                               👔 TREINADOR
                             </td>
                           </tr>
 
                           <tr key={coachForMatrix.id} className="bg-amber-950/10 hover:bg-amber-950/20 transition-colors border-b-2 border-zinc-800">
-                            <td className="py-1.5 px-2 sticky left-0 z-10 bg-[#141210] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-l-2 border-amber-500 whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-black text-amber-500 w-2.5 text-center">★</span>
-                                <div className="w-5 h-5 rounded overflow-hidden bg-amber-950/60 flex-shrink-0 border border-amber-500/60">
+                            <td className="py-2 px-3 sticky left-0 z-10 bg-[#141210] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-l-2 border-amber-500 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-amber-500 w-3 text-center">★</span>
+                                <div className="w-6 h-6 rounded overflow-hidden bg-amber-950/60 flex-shrink-0 border border-amber-500/60">
                                   <PlayerAvatar src={coachForMatrix.photo_url} name={coachForMatrix.name} isCoach={true} />
                                 </div>
-                                <span className="font-black text-amber-200 text-[11px] truncate max-w-[105px]">
+                                <span className="font-black text-amber-200 text-[11px] md:text-xs truncate max-w-[130px]">
                                   {coachForMatrix.name}
                                 </span>
                               </div>
@@ -1056,13 +1054,13 @@ export default function Home() {
                               const cellTheme = hasCoached ? getScoreTheme(score) : null;
 
                               return (
-                                <td key={m.id} className="py-1 px-1 text-center border-l border-zinc-800/50 bg-amber-950/5">
+                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50 bg-amber-950/5">
                                   {hasCoached ? (
-                                    <div className={`w-8 h-6 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                    <div className={`w-8 h-7 md:w-9 md:h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] md:text-xs border ${cellTheme?.matrixBg}`}>
                                       {score.toFixed(1)}
                                     </div>
                                   ) : (
-                                    <div className="w-8 h-6 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                    <div className="w-8 h-7 md:w-9 md:h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
                                       —
                                     </div>
                                   )}
@@ -1070,7 +1068,7 @@ export default function Home() {
                               );
                             })}
 
-                            <td className="py-1 px-1.5 text-center border-l border-zinc-800 bg-[#191512]">
+                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#191512]">
                               {(() => {
                                 const userCoachAvg = getUserPlayerAverage(coachForMatrix.id);
                                 const coachSeason = seasonStatsMap.get(coachForMatrix.id);
@@ -1081,7 +1079,7 @@ export default function Home() {
                                 const displayCoachAvg = progressMode === 'user' ? userCoachAvg : commCoachAvg;
 
                                 return displayCoachAvg ? (
-                                  <span className="font-black text-xs text-amber-400">
+                                  <span className="font-black text-xs md:text-sm text-amber-400">
                                     {displayCoachAvg}
                                   </span>
                                 ) : (
@@ -1094,7 +1092,7 @@ export default function Home() {
                           <tr className="bg-zinc-900/40 border-b border-zinc-800">
                             <td
                               colSpan={pastMatches.length + 2}
-                              className="py-1 px-2 text-[9px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
+                              className="py-1 px-3 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
                             >
                               ⚽ PLANTEL
                             </td>
@@ -1117,13 +1115,13 @@ export default function Home() {
 
                         return (
                           <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
-                            <td className="py-1.5 px-2 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)] whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-black text-zinc-600 w-2.5 text-center">{idx + 1}</span>
-                                <div className="w-5 h-5 rounded overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
+                            <td className="py-2 px-3 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)] whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-zinc-600 w-3 text-center">{idx + 1}</span>
+                                <div className="w-6 h-6 rounded overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
                                   <PlayerAvatar src={p.photo_url} name={p.name} />
                                 </div>
-                                <span className="font-bold text-white text-[11px] truncate max-w-[105px]">
+                                <span className="font-bold text-white text-[11px] md:text-xs truncate max-w-[130px]">
                                   {p.name}
                                 </span>
                               </div>
@@ -1135,13 +1133,13 @@ export default function Home() {
                               const cellTheme = hasPlayed ? getScoreTheme(score) : null;
 
                               return (
-                                <td key={m.id} className="py-1 px-1 text-center border-l border-zinc-800/50">
+                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50">
                                   {hasPlayed ? (
-                                    <div className={`w-8 h-6 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                    <div className={`w-8 h-7 md:w-9 md:h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] md:text-xs border ${cellTheme?.matrixBg}`}>
                                       {score.toFixed(1)}
                                     </div>
                                   ) : (
-                                    <div className="w-8 h-6 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                    <div className="w-8 h-7 md:w-9 md:h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
                                       —
                                     </div>
                                   )}
@@ -1149,9 +1147,9 @@ export default function Home() {
                               );
                             })}
 
-                            <td className="py-1 px-1.5 text-center border-l border-zinc-800 bg-[#121217]">
+                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
                               {displayAvg ? (
-                                <span className={`font-black text-xs ${avgTheme?.text}`}>
+                                <span className={`font-black text-xs md:text-sm ${avgTheme?.text}`}>
                                   {displayAvg}
                                 </span>
                               ) : (
@@ -1165,24 +1163,24 @@ export default function Home() {
                   </table>
                 </div>
 
-                <div className="p-2.5 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-around text-[9px] font-bold text-zinc-400">
-                  <div className="flex items-center gap-1">
+                <div className="p-3 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-around text-[9px] md:text-xs font-bold text-zinc-400">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded bg-emerald-500"></span>
                     <span>≥ 8.0</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded bg-teal-500"></span>
                     <span>6.0 - 7.9</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded bg-amber-500"></span>
                     <span>5.0 - 5.9</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded bg-rose-500"></span>
                     <span>&lt; 5.0</span>
                   </div>
-                  <div className="flex items-center gap-1 text-zinc-500">
+                  <div className="flex items-center gap-1.5 text-zinc-500">
                     <span className="w-2.5 h-2.5 rounded bg-zinc-800 text-center leading-none">—</span>
                     <span>{progressMode === 'user' ? 'Sem Voto' : 'Ausente'}</span>
                   </div>
@@ -1194,10 +1192,10 @@ export default function Home() {
 
         {/* Rodapé Legal */}
         <footer className="mt-12 pt-6 border-t border-zinc-800/50 text-center space-y-1">
-          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+          <p className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-widest">
             BenficaVote • Plataforma de Adeptos
           </p>
-          <p className="text-[9px] text-zinc-500 max-w-xs mx-auto leading-relaxed">
+          <p className="text-[9px] md:text-xs text-zinc-500 max-w-sm md:max-w-md mx-auto leading-relaxed">
             Aplicação independente e não oficial criada por sócios e adeptos. Sem qualquer afiliação institucional ao Sport Lisboa e Benfica.
           </p>
         </footer>
