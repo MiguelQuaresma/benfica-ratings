@@ -230,6 +230,8 @@ export default function Home() {
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
+        .not('opponent', 'ilike', '%teste%')
+        .not('competition', 'ilike', '%teste%')
         .gte('date', new Date().toISOString())
         .order('date', { ascending: true })
         .limit(1)
@@ -276,6 +278,8 @@ export default function Home() {
       .from('matches')
       .select('*')
       .eq('is_open_for_voting', false)
+      .not('opponent', 'ilike', '%teste%')
+      .not('competition', 'ilike', '%teste%')
       .order('date', { ascending: true })
       .limit(20);
 
@@ -483,7 +487,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
-      {/* Topo Limpo */}
       <header className="border-b border-zinc-800/60 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -506,7 +509,6 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Próximo Jogo */}
         {upcomingMatch && (
           <div className="mb-4 p-4 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
@@ -533,7 +535,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 4 ABAS MODERNAS */}
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5">
           {activeMatch && (
             <>
@@ -890,7 +891,7 @@ export default function Home() {
         )}
 
         {/* =========================================================================
-            VISTA 4: PROGRESSO DE ÉPOCA (TREINADOR NO TOPO + PLANTEL COM ALTERNADOR)
+            VISTA 4: PROGRESSO DE ÉPOCA (BARRA FIXA COMPACTA DO NOME DO JOGADOR)
             ========================================================================= */}
         {view === 'matrix' && (
           <div className="space-y-3">
@@ -941,22 +942,23 @@ export default function Home() {
             ) : (
               <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
                 <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700">
-                  <table className="w-full text-left border-collapse min-w-[500px]">
+                  <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                        <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] min-w-[130px]">
-                          Elemento
+                        {/* COLUNA FIXA COMPACTA */}
+                        <th className="py-2 px-2 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] w-fit whitespace-nowrap">
+                          Nome
                         </th>
 
                         {pastMatches.map((m) => (
-                          <th key={m.id} className="py-2 px-2 text-center min-w-[44px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
+                          <th key={m.id} className="py-2 px-1.5 text-center min-w-[42px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
                             <span className="block text-[9px] text-zinc-300 font-black">{getOpponentAbbr(m.opponent)}</span>
                             <span className="block text-[8px] text-zinc-500 font-semibold">{m.is_home !== false ? 'C' : 'F'}</span>
                           </th>
                         ))}
 
-                        <th className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90">
-                          {progressMode === 'user' ? 'A Tua Média' : 'Média'}
+                        <th className="py-2 px-2 text-center border-l border-zinc-800 min-w-[50px] text-red-400 bg-zinc-900/90">
+                          {progressMode === 'user' ? 'Nota' : 'Média'}
                         </th>
                       </tr>
                     </thead>
@@ -967,25 +969,22 @@ export default function Home() {
                           <tr className="bg-amber-950/20 border-b border-amber-600/30">
                             <td
                               colSpan={pastMatches.length + 2}
-                              className="py-1 px-3 text-[9px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
+                              className="py-1 px-2 text-[9px] font-black uppercase tracking-widest text-amber-400 sticky left-0 z-10"
                             >
                               👔 TREINADOR
                             </td>
                           </tr>
 
                           <tr key={coachForMatrix.id} className="bg-amber-950/10 hover:bg-amber-950/20 transition-colors border-b-2 border-zinc-800">
-                            <td className="py-2.5 px-3 sticky left-0 z-10 bg-[#141210] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-l-2 border-amber-500">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black text-amber-500 w-3">★</span>
-                                <div className="w-6 h-6 rounded-md overflow-hidden bg-amber-950/60 flex-shrink-0 border border-amber-500/60">
+                            <td className="py-1.5 px-2 sticky left-0 z-10 bg-[#141210] shadow-[2px_0_5px_rgba(0,0,0,0.5)] border-l-2 border-amber-500 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-black text-amber-500 w-2.5 text-center">★</span>
+                                <div className="w-5 h-5 rounded overflow-hidden bg-amber-950/60 flex-shrink-0 border border-amber-500/60">
                                   <PlayerAvatar src={coachForMatrix.photo_url} name={coachForMatrix.name} isCoach={true} />
                                 </div>
-                                <div className="min-w-0">
-                                  <span className="font-black text-amber-200 text-[11px] truncate block max-w-[85px]">
-                                    {coachForMatrix.name}
-                                  </span>
-                                  <span className="text-[8px] text-amber-400/80 uppercase font-black">Mister</span>
-                                </div>
+                                <span className="font-black text-amber-200 text-[11px] truncate max-w-[105px]">
+                                  {coachForMatrix.name}
+                                </span>
                               </div>
                             </td>
 
@@ -996,13 +995,13 @@ export default function Home() {
                               const cellTheme = hasCoached ? getScoreTheme(score) : null;
 
                               return (
-                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50 bg-amber-950/5">
+                                <td key={m.id} className="py-1 px-1 text-center border-l border-zinc-800/50 bg-amber-950/5">
                                   {hasCoached ? (
-                                    <div className={`w-8 h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                    <div className={`w-8 h-6 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
                                       {score.toFixed(1)}
                                     </div>
                                   ) : (
-                                    <div className="w-8 h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                    <div className="w-8 h-6 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
                                       —
                                     </div>
                                   )}
@@ -1010,7 +1009,7 @@ export default function Home() {
                               );
                             })}
 
-                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#191512]">
+                            <td className="py-1 px-1.5 text-center border-l border-zinc-800 bg-[#191512]">
                               {(() => {
                                 const userCoachAvg = getUserPlayerAverage(coachForMatrix.id);
                                 const coachSeason = seasonStatsMap.get(coachForMatrix.id);
@@ -1034,7 +1033,7 @@ export default function Home() {
                           <tr className="bg-zinc-900/40 border-b border-zinc-800">
                             <td
                               colSpan={pastMatches.length + 2}
-                              className="py-1 px-3 text-[9px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
+                              className="py-1 px-2 text-[9px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
                             >
                               ⚽ PLANTEL
                             </td>
@@ -1042,7 +1041,7 @@ export default function Home() {
                         </>
                       )}
 
-                      {/* 2. JOGADORES DE CAMPO */}
+                      {/* 2. JOGADORES DE CAMPO COM COLUNA COMPACTA */}
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
@@ -1057,18 +1056,16 @@ export default function Home() {
 
                         return (
                           <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
-                            <td className="py-2 px-3 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)]">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black text-zinc-600 w-3">{idx + 1}</span>
-                                <div className="w-6 h-6 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
+                            {/* NOME FIXO MAIS PEQUENO */}
+                            <td className="py-1.5 px-2 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)] whitespace-nowrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-black text-zinc-600 w-2.5 text-center">{idx + 1}</span>
+                                <div className="w-5 h-5 rounded overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
                                   <PlayerAvatar src={p.photo_url} name={p.name} />
                                 </div>
-                                <div className="min-w-0">
-                                  <span className="font-bold text-white text-[11px] truncate block max-w-[85px]">
-                                    {p.name}
-                                  </span>
-                                  <span className="text-[8px] text-zinc-500 uppercase font-semibold">{p.position}</span>
-                                </div>
+                                <span className="font-bold text-white text-[11px] truncate max-w-[105px]">
+                                  {p.name}
+                                </span>
                               </div>
                             </td>
 
@@ -1078,13 +1075,13 @@ export default function Home() {
                               const cellTheme = hasPlayed ? getScoreTheme(score) : null;
 
                               return (
-                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50">
+                                <td key={m.id} className="py-1 px-1 text-center border-l border-zinc-800/50">
                                   {hasPlayed ? (
-                                    <div className={`w-8 h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
+                                    <div className={`w-8 h-6 mx-auto rounded flex items-center justify-center font-black text-[11px] border ${cellTheme?.matrixBg}`}>
                                       {score.toFixed(1)}
                                     </div>
                                   ) : (
-                                    <div className="w-8 h-7 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
+                                    <div className="w-8 h-6 mx-auto rounded flex items-center justify-center text-zinc-600 font-bold text-[10px] bg-zinc-900/40">
                                       —
                                     </div>
                                   )}
@@ -1092,7 +1089,7 @@ export default function Home() {
                               );
                             })}
 
-                            <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#121217]">
+                            <td className="py-1 px-1.5 text-center border-l border-zinc-800 bg-[#121217]">
                               {displayAvg ? (
                                 <span className={`font-black text-xs ${avgTheme?.text}`}>
                                   {displayAvg}
@@ -1108,7 +1105,6 @@ export default function Home() {
                   </table>
                 </div>
 
-                {/* Legenda de Cores */}
                 <div className="p-2.5 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-around text-[9px] font-bold text-zinc-400">
                   <div className="flex items-center gap-1">
                     <span className="w-2.5 h-2.5 rounded bg-emerald-500"></span>
@@ -1150,7 +1146,6 @@ export default function Home() {
       {/* Cartões Invisíveis para html-to-image */}
       {activeMatch && (
         <>
-          {/* Cartão Pessoal */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={userCardRef}
@@ -1236,7 +1231,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Cartão Comunidade */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={communityCardRef}
