@@ -143,6 +143,7 @@ function getOpponentAbbr(name: string) {
 export default function Home() {
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
+  const [allUpcomingMatches, setAllUpcomingMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [allSquad, setAllSquad] = useState<Player[]>([]);
   const [stats, setStats] = useState<Stat[]>([]);
@@ -165,6 +166,7 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
+      // 1. Procurar jogo ativo
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -176,6 +178,7 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
+        // 2. Carregar o plantel do jogo ativo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -195,6 +198,7 @@ export default function Home() {
           setPlayers(sorted);
         }
 
+        // 3. Verificar se já votou neste dispositivo
         const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
@@ -226,19 +230,23 @@ export default function Home() {
         setView('history');
       }
 
-      const { data: next } = await supabase
+      // 4. Carregar jogos agendados para vir (excluindo testes)
+      const nowIso = new Date().toISOString();
+      const { data: upcomingList } = await supabase
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
         .not('opponent', 'ilike', '%teste%')
         .not('competition', 'ilike', '%teste%')
-        .gte('date', new Date().toISOString())
-        .order('date', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .gte('date', nowIso)
+        .order('date', { ascending: true });
 
-      if (next) {
-        setUpcomingMatch(next as Match);
+      if (upcomingList && upcomingList.length > 0) {
+        setAllUpcomingMatches(upcomingList as Match[]);
+        setUpcomingMatch(upcomingList[0] as Match);
+      } else {
+        setAllUpcomingMatches([]);
+        setUpcomingMatch(null);
       }
 
       loadHistoryAndMatrix();
@@ -274,10 +282,14 @@ export default function Home() {
   }
 
   async function loadHistoryAndMatrix() {
+    const nowIso = new Date().toISOString();
+
+    // 1. Carregar APENAS jogos passados já jogados (data anterior à atual)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
       .eq('is_open_for_voting', false)
+      .lt('date', nowIso)
       .not('opponent', 'ilike', '%teste%')
       .not('competition', 'ilike', '%teste%')
       .order('date', { ascending: true })
@@ -287,6 +299,7 @@ export default function Home() {
       setPastMatches(matches as Match[]);
     }
 
+    // 2. Carregar todo o plantel
     const { data: allPlayersData } = await supabase
       .from('players')
       .select('*');
@@ -301,6 +314,7 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
+    // 3. Carregar pontuações médias da comunidade
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -316,6 +330,7 @@ export default function Home() {
       setCommunityMatrixScores(matrixMap);
     }
 
+    // 4. Carregar votos do próprio utilizador
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -335,6 +350,7 @@ export default function Home() {
       }
     }
 
+    // 5. Médias da temporada
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -509,6 +525,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-md mx-auto px-4 pt-4">
+        {/* Contagem Decrescente do Próximo Encontro */}
         {upcomingMatch && (
           <div className="mb-4 p-4 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
@@ -535,6 +552,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* 4 ABAS MODERNAS */}
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5">
           {activeMatch && (
             <>
@@ -586,7 +604,6 @@ export default function Home() {
         {/* VISTA 1: VOTAR */}
         {activeMatch && view === 'vote' && (
           <>
-            {/* BANNER CLARO DO JOGO A DECORRER */}
             <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-red-900/40 shadow-sm flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5 mb-1">
@@ -785,7 +802,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO GERAL */}
+        {/* VISTA 3: HISTÓRICO GERAL & CALENDÁRIO */}
         {view === 'history' && (
           <div className="space-y-5">
             <div className="p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
@@ -802,6 +819,7 @@ export default function Home() {
               </div>
             </div>
 
+            {/* TOP DA TEMPORADA */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">
@@ -878,17 +896,45 @@ export default function Home() {
               )}
             </div>
 
+            {/* SEÇÃO: PRÓXIMOS JOGOS AGENDADOS (CELTIC, VITÓRIA, ETC.) */}
+            {allUpcomingMatches.length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                  Próximos Encontros
+                </h3>
+                <div className="space-y-2">
+                  {allUpcomingMatches.map((m) => (
+                    <div
+                      key={m.id}
+                      className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="text-xs font-bold text-white">{formatMatchTitle(m)}</p>
+                        <span className="text-[10px] text-zinc-500">
+                          {m.competition} • {new Date(m.date).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-black text-amber-400 bg-amber-950/40 border border-amber-800/40 px-2.5 py-0.5 rounded-md">
+                        Por Jogar
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SEÇÃO: HISTÓRICO DE JOGOS PASSADOS (TERMINADOS) */}
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
                 Histórico de Jogos
               </h3>
               {pastMatches.length === 0 ? (
                 <p className="text-xs text-zinc-500 bg-[#121215] p-3.5 rounded-xl border border-zinc-800/80 text-center">
-                  Sem histórico de jogos passados.
+                  Ainda não foram disputados jogos oficiais nesta época.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {pastMatches.map((m) => (
+                  {pastMatches.slice().reverse().map((m) => (
                     <div
                       key={m.id}
                       className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
@@ -908,9 +954,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* =========================================================================
-            VISTA 4: PROGRESSO DE ÉPOCA (BARRA FIXA COMPACTA DO NOME DO JOGADOR)
-            ========================================================================= */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
         {view === 'matrix' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -963,7 +1007,6 @@ export default function Home() {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                        {/* COLUNA FIXA COMPACTA */}
                         <th className="py-2 px-2 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] w-fit whitespace-nowrap">
                           Nome
                         </th>
@@ -1059,7 +1102,7 @@ export default function Home() {
                         </>
                       )}
 
-                      {/* 2. JOGADORES DE CAMPO COM COLUNA COMPACTA */}
+                      {/* 2. JOGADORES DE CAMPO */}
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
@@ -1074,7 +1117,6 @@ export default function Home() {
 
                         return (
                           <tr key={p.id} className="hover:bg-zinc-800/30 transition-colors">
-                            {/* NOME FIXO MAIS PEQUENO */}
                             <td className="py-1.5 px-2 sticky left-0 z-10 bg-[#101014] shadow-[2px_0_5px_rgba(0,0,0,0.5)] whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] font-black text-zinc-600 w-2.5 text-center">{idx + 1}</span>
