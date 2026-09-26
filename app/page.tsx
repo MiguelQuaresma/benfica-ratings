@@ -810,7 +810,7 @@ export default function Home() {
                 <span className="text-[10px] font-black uppercase tracking-wider text-red-500 block">
                   Registo Acumulado
                 </span>
-                <h3 className="text-sm font-bold text-white">Média Global de Todos os Jogos</h3>
+                <h3 className="text-sm font-bold text-white">Média Global do Plantel</h3>
                 <p className="text-[11px] text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
               </div>
               <div className="text-right">
