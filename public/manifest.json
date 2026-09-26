@@ -5,12 +5,13 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",
-  "theme_color": "#dc2626",
+  "theme_color": "#09090b",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp",
-      "sizes": "192x192 512x512",
-      "type": "image/webp",
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ]
