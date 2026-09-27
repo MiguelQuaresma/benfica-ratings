@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <radialGradient id="bgGlow" cx="50%" cy="40%" r="60%">
+    <radialGradient id="bgGlow" cx="50%" cy="45%" r="65%">
       <stop offset="0%" stop-color="#1f1315"/>
       <stop offset="100%" stop-color="#09090b"/>
     </radialGradient>
@@ -8,40 +8,27 @@
       <stop offset="0%" stop-color="#ef4444"/>
       <stop offset="100%" stop-color="#b91c1c"/>
     </linearGradient>
-    <!-- Definição de uma estrela padrão para manter as 3 perfeitamente iguais -->
+    <!-- Estrela idêntica ao estilo do SLB -->
     <g id="star">
-      <polygon points="0,-16 4.9,-4.9 16,-4.9 7.2,2.5 10.6,13.6 0,6.8 -10.6,13.6 -7.2,2.5 -16,-4.9 -4.9,-4.9" fill="#f59e0b"/>
+      <polygon points="0,-18 5.5,-5.5 18,-5.5 8.1,2.8 11.9,15.3 0,7.6 -11.9,15.3 -8.1,2.8 -18,-5.5 -5.5,-5.5" fill="#f59e0b"/>
     </g>
   </defs>
 
-  <!-- Fundo escuro com cantos arredondados -->
+  <!-- Fundo escuro premium com cantos arredondados -->
   <rect width="512" height="512" rx="112" fill="url(#bgGlow)"/>
   <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#27272a" stroke-width="4"/>
 
-  <!-- Três Estrelas em Fila Horizontal (estilo oficial SLB) -->
-  <g transform="translate(0, 0)">
-    <!-- Estrela 1 (Esquerda) -->
-    <use href="#star" x="210" y="52"/>
-    <!-- Estrela 2 (Centro) -->
-    <use href="#star" x="256" y="52"/>
-    <!-- Estrela 3 (Direita) -->
-    <use href="#star" x="302" y="52"/>
+  <!-- Brasão / Badge Circular Central -->
+  <circle cx="256" cy="270" r="160" fill="#141418" stroke="url(#redGrad)" stroke-width="8"/>
+
+  <!-- Três Estrelas em Fila Horizontal no Topo -->
+  <g>
+    <use href="#star" x="204" y="68"/>
+    <use href="#star" x="256" y="68"/>
+    <use href="#star" x="308" y="68"/>
   </g>
 
-  <!-- Brasão / Badge Central -->
-  <circle cx="256" cy="225" r="135" fill="#141418" stroke="url(#redGrad)" stroke-width="8"/>
-
-  <!-- Iniciais BV -->
-  <text x="212" y="272" font-family="system-ui, -apple-system, sans-serif" font-size="120" font-weight="900" fill="#ffffff" text-anchor="middle">B</text>
-  <text x="300" y="272" font-family="system-ui, -apple-system, sans-serif" font-size="120" font-weight="900" fill="#ef4444" text-anchor="middle">V</text>
-
-  <!-- Nome BenficaVote -->
-  <text x="256" y="420" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="900" letter-spacing="4" fill="#ffffff" text-anchor="middle">
-    BENFICA<tspan fill="#ef4444">VOTE</tspan>
-  </text>
-
-  <!-- Legenda: VOTO DOS ADEPTOS -->
-  <text x="256" y="452" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="6" fill="#71717a" text-anchor="middle">
-    VOTO DOS ADEPTOS
-  </text>
+  <!-- Iniciais "BV" em Grande e Centradas -->
+  <text x="200" y="325" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="160" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-4">B</text>
+  <text x="312" y="325" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="160" font-weight="900" fill="#ef4444" text-anchor="middle" letter-spacing="-4">V</text>
 </svg>
