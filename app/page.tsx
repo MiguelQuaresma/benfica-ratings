@@ -85,6 +85,21 @@ function getScoreTheme(score: number) {
   };
 }
 
+function getPositionBadge(position: string) {
+  switch (position) {
+    case 'GR':
+      return 'bg-blue-950/50 text-blue-400 border-blue-800/40';
+    case 'DEF':
+      return 'bg-emerald-950/50 text-emerald-400 border-emerald-800/40';
+    case 'MED':
+      return 'bg-amber-950/50 text-amber-400 border-amber-800/40';
+    case 'AVA':
+      return 'bg-red-950/50 text-red-400 border-red-800/40';
+    default:
+      return 'bg-zinc-800 text-zinc-400 border-zinc-700';
+  }
+}
+
 function BenficaEmblem({ className = "w-7 h-7" }: { className?: string }) {
   return (
     <img
@@ -152,6 +167,7 @@ export default function Home() {
   const [communityMatrixScores, setCommunityMatrixScores] = useState<Record<string, Record<string, number>>>({});
   const [userMatrixScores, setUserMatrixScores] = useState<Record<string, Record<string, number>>>({});
   const [progressMode, setProgressMode] = useState<'community' | 'user'>('community');
+  const [matrixSector, setMatrixSector] = useState<'ALL' | 'GR' | 'DEF' | 'MED' | 'AVA'>('ALL');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [hasVoted, setHasVoted] = useState(false);
   const [view, setView] = useState<'vote' | 'results' | 'history' | 'matrix'>('vote');
@@ -161,12 +177,16 @@ export default function Home() {
   const [generatingCommunityCard, setGeneratingCommunityCard] = useState(false);
   const [lastRatedId, setLastRatedId] = useState<string | null>(null);
 
+  // Estado para o Mini Histograma de Votos
+  const [selectedPlayerForHistogram, setSelectedPlayerForHistogram] = useState<string | null>(null);
+  const [histogramData, setHistogramData] = useState<Record<number, number>>({});
+  const [loadingHistogram, setLoadingHistogram] = useState(false);
+
   const userCardRef = useRef<HTMLDivElement>(null);
   const communityCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function loadData() {
-      // 1. Procurar jogo ativo (pode ser oficial ou de teste para efeitos de votação)
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -178,7 +198,6 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
-        // 2. Carregar plantel do jogo ativo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -198,7 +217,6 @@ export default function Home() {
           setPlayers(sorted);
         }
 
-        // 3. Verificar voto local
         const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
@@ -230,7 +248,6 @@ export default function Home() {
         setView('history');
       }
 
-      // 4. Carregar jogos agendados futuros (excluindo testes)
       const nowIso = new Date().toISOString();
       const { data: upcomingList } = await supabase
         .from('matches')
@@ -281,10 +298,38 @@ export default function Home() {
     if (data) setStats(data as Stat[]);
   }
 
+  // Carregar distribuição de votos de 1 a 10 de um jogador específico
+  async function loadHistogram(playerId: string) {
+    if (!activeMatch) return;
+    if (selectedPlayerForHistogram === playerId) {
+      setSelectedPlayerForHistogram(null);
+      return;
+    }
+
+    setSelectedPlayerForHistogram(playerId);
+    setLoadingHistogram(true);
+
+    const { data } = await supabase
+      .from('ratings')
+      .select('score')
+      .eq('match_id', activeMatch.id)
+      .eq('player_id', playerId);
+
+    const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+    if (data) {
+      data.forEach((r: any) => {
+        const val = Math.round(Number(r.score));
+        if (counts[val] !== undefined) counts[val] += 1;
+      });
+    }
+
+    setHistogramData(counts);
+    setLoadingHistogram(false);
+  }
+
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
-    // 1. Carregar APENAS jogos oficiais passados (data anterior à atual e sem testes)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -299,7 +344,6 @@ export default function Home() {
     setPastMatches(validPastMatches);
     const validMatchIds = new Set(validPastMatches.map((m) => m.id));
 
-    // 2. Carregar plantel completo
     const { data: allPlayersData } = await supabase
       .from('players')
       .select('*');
@@ -314,7 +358,6 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
-    // 3. Carregar pontuações médias da comunidade APENAS para os jogos oficiais do histórico
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -322,7 +365,6 @@ export default function Home() {
     if (allScores) {
       const matrixMap: Record<string, Record<string, number>> = {};
       allScores.forEach((row: any) => {
-        // Ignora qualquer nota que venha de jogos de teste
         if (validMatchIds.has(row.match_id)) {
           if (!matrixMap[row.player_id]) {
             matrixMap[row.player_id] = {};
@@ -333,7 +375,6 @@ export default function Home() {
       setCommunityMatrixScores(matrixMap);
     }
 
-    // 4. Carregar votos do próprio utilizador apenas para os jogos oficiais do histórico
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -355,7 +396,6 @@ export default function Home() {
       }
     }
 
-    // 5. Médias da temporada oficiais
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -374,13 +414,11 @@ export default function Home() {
     }, 280);
   };
 
-  // Submissão com Validação e Aviso de Jogadores em Falta
   const handleSubmit = async () => {
     if (!activeMatch) return;
     const playerIds = Object.keys(ratings);
     if (playerIds.length === 0) return alert('Atribui pelo menos uma nota para submeter.');
 
-    // Verificar se ficaram jogadores por avaliar
     const unratedPlayers = players.filter((p) => ratings[p.id] === undefined);
     if (unratedPlayers.length > 0) {
       const namesList = unratedPlayers.map((p) => p.name).join(', ');
@@ -479,6 +517,17 @@ export default function Home() {
     .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
     .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
 
+  // Cálculo da Média da Equipa no Jogo Atual (Para os Cartões)
+  const userRatingsArray = Object.values(ratings);
+  const userMatchTeamAverage = userRatingsArray.length > 0
+    ? (userRatingsArray.reduce((a, b) => a + b, 0) / userRatingsArray.length).toFixed(1)
+    : '0.0';
+
+  const validCommunityScores = stats.map((s) => Number(s.avg_score)).filter((n) => !isNaN(n) && n > 0);
+  const communityMatchTeamAverage = validCommunityScores.length > 0
+    ? (validCommunityScores.reduce((a, b) => a + b, 0) / validCommunityScores.length).toFixed(1)
+    : '0.0';
+
   const seasonFieldPlayers = seasonStats.filter((s) => s.position !== 'TREINADOR');
   const top1 = seasonFieldPlayers[0] || null;
   const top2 = seasonFieldPlayers[1] || null;
@@ -495,8 +544,10 @@ export default function Home() {
 
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
 
+  // Filtragem por setor na matriz
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
+    .filter((p) => (matrixSector === 'ALL' ? true : p.position === matrixSector))
     .sort((a, b) => {
       const avgA = Number(seasonStatsMap.get(a.id)?.season_avg_score || 0);
       const avgB = Number(seasonStatsMap.get(b.id)?.season_avg_score || 0);
@@ -521,6 +572,9 @@ export default function Home() {
     activeMatch.opponent.toLowerCase().includes('teste') ||
     activeMatch.competition.toLowerCase().includes('teste')
   );
+
+  // Máximo do histograma para escala das barras
+  const maxHistogramCount = Math.max(...Object.values(histogramData), 1);
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
@@ -550,7 +604,6 @@ export default function Home() {
       </header>
 
       <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-4">
-        {/* Contagem Decrescente do Próximo Encontro */}
         {upcomingMatch && (
           <div className="mb-4 p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] md:text-xs font-bold tracking-wider text-zinc-400 uppercase">
@@ -577,7 +630,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 4 ABAS MODERNAS */}
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/80 mb-4 gap-0.5 max-w-xl mx-auto">
           {activeMatch && (
             <>
@@ -669,13 +721,13 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Grelha de Jogadores */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {players.map((p) => {
                 const currentScore = ratings[p.id];
                 const isCoach = p.position === 'TREINADOR';
                 const theme = currentScore ? getScoreTheme(currentScore) : null;
                 const isRecentlyChanged = lastRatedId === p.id;
+                const badgeClass = getPositionBadge(p.position);
 
                 return (
                   <div
@@ -695,7 +747,7 @@ export default function Home() {
                         </div>
                         <div>
                           <p className="font-bold text-sm text-white">{p.name}</p>
-                          <span className={`text-[10px] font-medium ${isCoach ? 'text-amber-400' : 'text-zinc-500'}`}>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${badgeClass}`}>
                             {p.position}
                           </span>
                         </div>
@@ -755,7 +807,7 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS */}
+        {/* VISTA 2: RESULTADOS COM MINI HISTOGRAMA INTERATIVO */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
             <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3 max-w-xl mx-auto">
@@ -764,9 +816,7 @@ export default function Home() {
                   {hasVoted ? '✓ O teu voto está registado' : 'Resultados em Direto'}
                 </span>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  {hasVoted
-                    ? 'Podes exportar as tuas notas ou consultar a média da comunidade:'
-                    : 'Avaliações em tempo real da comunidade benfiquista:'}
+                  Clica num jogador para abrir o gráfico de distribuição de votos:
                 </p>
               </div>
 
@@ -813,29 +863,94 @@ export default function Home() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {stats.map((s, idx) => (
-                <div
-                  key={s.player_id}
-                  className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-zinc-600 w-4">{idx + 1}</span>
-                    <div className="w-9 h-9 rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
-                      <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+              {stats.map((s, idx) => {
+                const isSelected = selectedPlayerForHistogram === s.player_id;
+                const userScore = ratings[s.player_id];
+                const badgeClass = getPositionBadge(s.position);
+
+                return (
+                  <div
+                    key={s.player_id}
+                    className="p-3 bg-[#111114] border border-zinc-800/70 rounded-xl transition-all cursor-pointer hover:border-zinc-700"
+                    onClick={() => loadHistogram(s.player_id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-zinc-600 w-4">{idx + 1}</span>
+                        <div className="w-9 h-9 rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
+                          <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-xs md:text-sm text-white">{s.player_name}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className={`text-[8px] font-bold px-1 py-0.2 rounded border uppercase ${badgeClass}`}>
+                              {s.position}
+                            </span>
+                            <span className="text-[9px] text-zinc-500">
+                              {s.total_votes} votos {userScore ? `• Tua: ${userScore}` : ''}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right flex items-center gap-2">
+                        <div>
+                          <span className="text-base md:text-lg font-black text-red-500">{s.avg_score}</span>
+                          <span className="text-[9px] text-zinc-500 font-medium"> /10</span>
+                        </div>
+                        <span className="text-zinc-600 text-xs">{isSelected ? '▲' : '▼'}</span>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-xs md:text-sm text-white">{s.player_name}</p>
-                      <span className="text-[9px] md:text-[10px] text-zinc-500">
-                        {s.position} • {s.total_votes} votos {ratings[s.player_id] ? `(A tua nota: ${ratings[s.player_id]})` : ''}
-                      </span>
-                    </div>
+
+                    {/* MINI HISTOGRAMA / GRÁFICO DE BARRAS DE DISTRIBUIÇÃO */}
+                    {isSelected && (
+                      <div className="mt-3 pt-3 border-t border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-[9px] font-black uppercase text-zinc-400">
+                            Distribuição das Notas (1 a 10)
+                          </span>
+                          {userScore && (
+                            <span className="text-[9px] font-bold text-red-400 bg-red-950/40 px-1.5 py-0.5 rounded border border-red-900/40">
+                              O teu voto: {userScore}
+                            </span>
+                          )}
+                        </div>
+
+                        {loadingHistogram ? (
+                          <p className="text-[10px] text-zinc-500 text-center py-2">A carregar distribuição...</p>
+                        ) : (
+                          <div className="grid grid-cols-10 gap-1 items-end h-16 pt-2">
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                              const count = histogramData[num] || 0;
+                              const heightPct = (count / maxHistogramCount) * 100;
+                              const isUserPick = userScore === num;
+
+                              return (
+                                <div key={num} className="flex flex-col items-center h-full justify-end group">
+                                  <span className="text-[8px] font-bold text-zinc-500 mb-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {count}
+                                  </span>
+                                  <div className="w-full bg-zinc-800/80 rounded-t h-full flex items-end overflow-hidden">
+                                    <div
+                                      className={`w-full transition-all duration-300 rounded-t ${
+                                        isUserPick ? 'bg-red-500' : 'bg-zinc-600 hover:bg-zinc-400'
+                                      }`}
+                                      style={{ height: `${Math.max(heightPct, 6)}%` }}
+                                      title={`Nota ${num}: ${count} votos`}
+                                    ></div>
+                                  </div>
+                                  <span className={`text-[8px] font-bold mt-1 ${isUserPick ? 'text-red-400' : 'text-zinc-500'}`}>
+                                    {num}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-right">
-                    <span className="text-base md:text-lg font-black text-red-500">{s.avg_score}</span>
-                    <span className="text-[9px] text-zinc-500 font-medium"> /10</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -857,7 +972,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* TOP DA TEMPORADA */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400">
@@ -934,7 +1048,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* SEÇÃO: PRÓXIMOS JOGOS AGENDADOS (CELTIC, VITÓRIA, ETC.) */}
             {allUpcomingMatches.length > 0 && (
               <div>
                 <h3 className="text-xs md:text-sm font-bold uppercase tracking-wider text-zinc-400 mb-2">
@@ -961,7 +1074,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* SEÇÃO: HISTÓRICO DE JOGOS PASSADOS (TERMINADOS) */}
             <div>
               <h3 className="text-xs md:text-sm font-bold uppercase tracking-wider text-zinc-400 mb-2">
                 Histórico de Jogos Disputados
@@ -992,7 +1104,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA (MATRIZ COMPLETA) */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM FILTROS POR SETOR) */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1009,30 +1121,50 @@ export default function Home() {
               </span>
             </div>
 
-            {/* BOTÃO ALTERNADOR DE MODO */}
-            <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 max-w-sm">
-              <button
-                type="button"
-                onClick={() => setProgressMode('community')}
-                className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-                  progressMode === 'community'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                👥 Geral Adeptos
-              </button>
-              <button
-                type="button"
-                onClick={() => setProgressMode('user')}
-                className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-                  progressMode === 'user'
-                    ? 'bg-red-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                👤 Os Meus Votos
-              </button>
+            <div className="flex flex-col sm:flex-row gap-2 justify-between items-stretch sm:items-center">
+              {/* BOTÃO ALTERNADOR DE MODO */}
+              <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 max-w-sm">
+                <button
+                  type="button"
+                  onClick={() => setProgressMode('community')}
+                  className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+                    progressMode === 'community'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  👥 Geral Adeptos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProgressMode('user')}
+                  className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+                    progressMode === 'user'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  👤 Os Meus Votos
+                </button>
+              </div>
+
+              {/* FILTROS POR SETOR (TODOS / GR / DEF / MED / AVA) */}
+              <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 gap-1 overflow-x-auto">
+                {(['ALL', 'GR', 'DEF', 'MED', 'AVA'] as const).map((sector) => (
+                  <button
+                    key={sector}
+                    type="button"
+                    onClick={() => setMatrixSector(sector)}
+                    className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
+                      matrixSector === sector
+                        ? 'bg-zinc-800 text-white border border-zinc-700 shadow-sm'
+                        : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {sector === 'ALL' ? 'Todos' : sector}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {pastMatches.length === 0 ? (
@@ -1062,7 +1194,7 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50 text-xs">
-                      {/* 1. TREINADOR NO TOPO DA TABELA */}
+                      {/* TREINADOR NO TOPO */}
                       {coachForMatrix && (
                         <>
                           <tr className="bg-amber-950/20 border-b border-amber-600/30">
@@ -1134,13 +1266,13 @@ export default function Home() {
                               colSpan={pastMatches.length + 2}
                               className="py-1 px-3 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
                             >
-                              ⚽ PLANTEL
+                              ⚽ PLANTEL {matrixSector !== 'ALL' ? `(${matrixSector})` : ''}
                             </td>
                           </tr>
                         </>
                       )}
 
-                      {/* 2. JOGADORES DE CAMPO */}
+                      {/* JOGADORES DE CAMPO FILTRADOS */}
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
@@ -1161,9 +1293,14 @@ export default function Home() {
                                 <div className="w-6 h-6 rounded overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700/60">
                                   <PlayerAvatar src={p.photo_url} name={p.name} />
                                 </div>
-                                <span className="font-bold text-white text-[11px] md:text-xs truncate max-w-[130px]">
-                                  {p.name}
-                                </span>
+                                <div>
+                                  <span className="font-bold text-white text-[11px] md:text-xs truncate block max-w-[130px]">
+                                    {p.name}
+                                  </span>
+                                  <span className="text-[8px] font-semibold text-zinc-500 uppercase">
+                                    {p.position}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
@@ -1230,7 +1367,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Rodapé Legal */}
         <footer className="mt-12 pt-6 border-t border-zinc-800/50 text-center space-y-1">
           <p className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-widest">
             BenficaVote • Plataforma de Adeptos
@@ -1241,9 +1377,12 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* Cartões Invisíveis para html-to-image */}
+      {/* =========================================================================
+          CARTÕES DE PARTILHA (COM MÉDIA GLOBAL DA EQUIPA EM DESTAQUE)
+          ========================================================================= */}
       {activeMatch && (
         <>
+          {/* Cartão Pessoal */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={userCardRef}
@@ -1277,23 +1416,33 @@ export default function Home() {
                 </div>
               </div>
 
-              {userBestPlayer && (
-                <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <img
-                      src={userBestPlayer.photo_url}
-                      alt={userBestPlayer.name}
-                      crossOrigin="anonymous"
-                      style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
-                    />
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor em Campo</span>
-                      <div style={{ fontSize: '16px', fontWeight: 800 }}>{userBestPlayer.name}</div>
+              {/* Destaque com Melhor Jogador + Média da Equipa */}
+              <div style={{ display: 'flex', gap: '10px', margin: '16px 0' }}>
+                {userBestPlayer && (
+                  <div style={{ flex: 1, padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <img
+                        src={userBestPlayer.photo_url}
+                        alt={userBestPlayer.name}
+                        crossOrigin="anonymous"
+                        style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover' }}
+                      />
+                      <div>
+                        <span style={{ fontSize: '9px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor</span>
+                        <div style={{ fontSize: '14px', fontWeight: 800 }}>{userBestPlayer.name}</div>
+                      </div>
                     </div>
+                    <div style={{ fontSize: '24px', fontWeight: 900, color: '#ef4444' }}>{ratings[userBestPlayer.id] || '—'}</div>
                   </div>
-                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{ratings[userBestPlayer.id] || '—'}</div>
+                )}
+
+                <div style={{ minWidth: '130px', padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #3f3f46', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                  <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>Média Equipa</span>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', marginTop: '2px' }}>
+                    {userMatchTeamAverage} <span style={{ fontSize: '11px', color: '#71717a' }}>/10</span>
+                  </div>
                 </div>
-              )}
+              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
                 {players.map((p) => {
@@ -1329,6 +1478,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Cartão Comunidade */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={communityCardRef}
@@ -1362,23 +1512,33 @@ export default function Home() {
                 </div>
               </div>
 
-              {motm && (
-                <div style={{ margin: '18px 0', padding: '16px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <img
-                      src={motm.photo_url}
-                      alt={motm.player_name}
-                      crossOrigin="anonymous"
-                      style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover' }}
-                    />
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ Homem do Jogo da Comunidade</span>
-                      <div style={{ fontSize: '16px', fontWeight: 800 }}>{motm.player_name}</div>
+              {/* Destaque com Homem do Jogo + Média da Equipa */}
+              <div style={{ display: 'flex', gap: '10px', margin: '16px 0' }}>
+                {motm && (
+                  <div style={{ flex: 1, padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <img
+                        src={motm.photo_url}
+                        alt={motm.player_name}
+                        crossOrigin="anonymous"
+                        style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover' }}
+                      />
+                      <div>
+                        <span style={{ fontSize: '9px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ Homem do Jogo</span>
+                        <div style={{ fontSize: '14px', fontWeight: 800 }}>{motm.player_name}</div>
+                      </div>
                     </div>
+                    <div style={{ fontSize: '24px', fontWeight: 900, color: '#ef4444' }}>{motm.avg_score}</div>
                   </div>
-                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#ef4444' }}>{motm.avg_score}</div>
+                )}
+
+                <div style={{ minWidth: '130px', padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #3f3f46', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                  <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>Média Equipa</span>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', marginTop: '2px' }}>
+                    {communityMatchTeamAverage} <span style={{ fontSize: '11px', color: '#71717a' }}>/10</span>
+                  </div>
                 </div>
-              )}
+              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
                 {stats.map((s) => (
