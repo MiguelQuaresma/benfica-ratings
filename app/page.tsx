@@ -166,6 +166,7 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
+      // 1. Procurar jogo ativo (pode ser oficial ou de teste para efeitos de votação)
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -177,6 +178,7 @@ export default function Home() {
         const matchData = current as Match;
         setActiveMatch(matchData);
 
+        // 2. Carregar plantel do jogo ativo
         const { data: lineups } = await supabase
           .from('match_lineups')
           .select('player_id, is_starter, players(*)')
@@ -196,6 +198,7 @@ export default function Home() {
           setPlayers(sorted);
         }
 
+        // 3. Verificar voto local
         const voterToken = localStorage.getItem('voter_token');
         let userAlreadyVoted = false;
 
@@ -227,6 +230,7 @@ export default function Home() {
         setView('history');
       }
 
+      // 4. Carregar jogos agendados futuros (excluindo testes)
       const nowIso = new Date().toISOString();
       const { data: upcomingList } = await supabase
         .from('matches')
@@ -280,6 +284,7 @@ export default function Home() {
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
+    // 1. Carregar APENAS jogos oficiais passados (data anterior à atual e sem testes)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -290,10 +295,11 @@ export default function Home() {
       .order('date', { ascending: true })
       .limit(20);
 
-    if (matches) {
-      setPastMatches(matches as Match[]);
-    }
+    const validPastMatches = (matches as Match[]) || [];
+    setPastMatches(validPastMatches);
+    const validMatchIds = new Set(validPastMatches.map((m) => m.id));
 
+    // 2. Carregar plantel completo
     const { data: allPlayersData } = await supabase
       .from('players')
       .select('*');
@@ -308,6 +314,7 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
+    // 3. Carregar pontuações médias da comunidade APENAS para os jogos oficiais do histórico
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -315,14 +322,18 @@ export default function Home() {
     if (allScores) {
       const matrixMap: Record<string, Record<string, number>> = {};
       allScores.forEach((row: any) => {
-        if (!matrixMap[row.player_id]) {
-          matrixMap[row.player_id] = {};
+        // Ignora qualquer nota que venha de jogos de teste
+        if (validMatchIds.has(row.match_id)) {
+          if (!matrixMap[row.player_id]) {
+            matrixMap[row.player_id] = {};
+          }
+          matrixMap[row.player_id][row.match_id] = Number(row.avg_score);
         }
-        matrixMap[row.player_id][row.match_id] = Number(row.avg_score);
       });
       setCommunityMatrixScores(matrixMap);
     }
 
+    // 4. Carregar votos do próprio utilizador apenas para os jogos oficiais do histórico
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -333,15 +344,18 @@ export default function Home() {
       if (userAllVotes) {
         const userMap: Record<string, Record<string, number>> = {};
         userAllVotes.forEach((row: any) => {
-          if (!userMap[row.player_id]) {
-            userMap[row.player_id] = {};
+          if (validMatchIds.has(row.match_id)) {
+            if (!userMap[row.player_id]) {
+              userMap[row.player_id] = {};
+            }
+            userMap[row.player_id][row.match_id] = Number(row.score);
           }
-          userMap[row.player_id][row.match_id] = Number(row.score);
         });
         setUserMatrixScores(userMap);
       }
     }
 
+    // 5. Médias da temporada oficiais
     const { data: season } = await supabase
       .from('season_player_stats')
       .select('*')
@@ -360,10 +374,21 @@ export default function Home() {
     }, 280);
   };
 
+  // Submissão com Validação e Aviso de Jogadores em Falta
   const handleSubmit = async () => {
     if (!activeMatch) return;
     const playerIds = Object.keys(ratings);
-    if (playerIds.length === 0) return alert('Atribui pelo menos uma nota.');
+    if (playerIds.length === 0) return alert('Atribui pelo menos uma nota para submeter.');
+
+    // Verificar se ficaram jogadores por avaliar
+    const unratedPlayers = players.filter((p) => ratings[p.id] === undefined);
+    if (unratedPlayers.length > 0) {
+      const namesList = unratedPlayers.map((p) => p.name).join(', ');
+      const confirmIncomplete = window.confirm(
+        `Ainda não avaliaste ${unratedPlayers.length} elemento(s):\n(${namesList})\n\nDesejas submeter as tuas notas mesmo assim?`
+      );
+      if (!confirmIncomplete) return;
+    }
 
     setSubmitting(true);
     let voterId = localStorage.getItem('voter_token');
@@ -492,9 +517,13 @@ export default function Home() {
     return (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
   };
 
+  const isTestMatch = activeMatch && (
+    activeMatch.opponent.toLowerCase().includes('teste') ||
+    activeMatch.competition.toLowerCase().includes('teste')
+  );
+
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
-      {/* Topo Alinhado e com Largura Responsiva */}
       <header className="border-b border-zinc-800/60 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -504,9 +533,13 @@ export default function Home() {
             </h1>
           </div>
           {activeMatch ? (
-            <span className="inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-red-400 bg-red-950/40 border border-red-800/40 px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-              A decorrer
+            <span className={`inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full ${
+              isTestMatch
+                ? 'text-amber-400 bg-amber-950/40 border border-amber-800/40'
+                : 'text-red-400 bg-red-950/40 border border-red-800/40'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isTestMatch ? 'bg-amber-400' : 'bg-red-500'} animate-pulse`}></span>
+              {isTestMatch ? 'Modo de Teste' : 'A decorrer'}
             </span>
           ) : (
             <span className="text-[10px] md:text-xs font-medium text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
@@ -516,7 +549,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Conteúdo Central Responsivo (Estreito em Mobile, Amplo em PC) */}
       <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-4">
         {/* Contagem Decrescente do Próximo Encontro */}
         {upcomingMatch && (
@@ -594,14 +626,20 @@ export default function Home() {
           </button>
         </div>
 
-        {/* VISTA 1: VOTAR (EM PC DIVIDE-SE EM 2 COLUNAS LADO A LADO) */}
+        {/* VISTA 1: VOTAR */}
         {activeMatch && view === 'vote' && (
           <>
-            <div className="mb-4 p-3.5 md:p-4 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-red-900/40 shadow-sm flex items-center justify-between">
+            <div className={`mb-4 p-3.5 md:p-4 rounded-2xl border shadow-sm flex items-center justify-between ${
+              isTestMatch
+                ? 'bg-gradient-to-r from-[#171511] to-[#121215] border-amber-900/40'
+                : 'bg-gradient-to-r from-[#141419] to-[#121215] border-red-900/40'
+            }`}>
               <div>
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                  <span className="text-[10px] md:text-xs font-black uppercase tracking-wider text-red-400">
+                  <span className={`w-2 h-2 rounded-full ${isTestMatch ? 'bg-amber-500' : 'bg-red-500'} animate-pulse`}></span>
+                  <span className={`text-[10px] md:text-xs font-black uppercase tracking-wider ${
+                    isTestMatch ? 'text-amber-400' : 'text-red-400'
+                  }`}>
                     {activeMatch.competition} • {activeMatch.is_home !== false ? 'Estádio da Luz' : 'Fora'}
                   </span>
                 </div>
@@ -609,8 +647,12 @@ export default function Home() {
                   {formatMatchTitle(activeMatch)}
                 </h2>
               </div>
-              <span className="text-[9px] md:text-xs font-bold text-zinc-400 bg-zinc-900/80 px-2.5 py-1 rounded-md border border-zinc-800">
-                Votação Aberta
+              <span className={`text-[9px] md:text-xs font-bold px-2.5 py-1 rounded-md border ${
+                isTestMatch
+                  ? 'text-amber-400 bg-amber-950/60 border-amber-800/60'
+                  : 'text-zinc-400 bg-zinc-900/80 border border-zinc-800'
+              }`}>
+                {isTestMatch ? 'Jogo de Teste' : 'Votação Aberta'}
               </span>
             </div>
 
@@ -627,7 +669,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Grelha de Jogadores: 1 coluna em mobile, 2 colunas em desktop */}
+            {/* Grelha de Jogadores */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {players.map((p) => {
                 const currentScore = ratings[p.id];
@@ -692,7 +734,6 @@ export default function Home() {
               })}
             </div>
 
-            {/* Botão de Submissão em Destaque */}
             <div className="max-w-md mx-auto">
               {!hasVoted ? (
                 <button
@@ -714,7 +755,7 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS (EM PC EXPANSIVO COM 2 COLUNAS) */}
+        {/* VISTA 2: RESULTADOS */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
             <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3 max-w-xl mx-auto">
@@ -771,7 +812,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Lista de notas: 1 coluna em mobile, 2 colunas em PC */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {stats.map((s, idx) => (
                 <div
@@ -809,7 +849,7 @@ export default function Home() {
                   Registo Acumulado
                 </span>
                 <h3 className="text-sm md:text-lg font-bold text-white">Média Global do Plantel</h3>
-                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
+                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{pastMatches.length} partidas oficiais disputadas</p>
               </div>
               <div className="text-right">
                 <span className="text-3xl md:text-4xl font-black text-red-500">{globalAverage}</span>
@@ -823,7 +863,7 @@ export default function Home() {
                 <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400">
                   Top da Temporada (Jogadores)
                 </h3>
-                <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Médias globais</span>
+                <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Médias oficiais</span>
               </div>
 
               {seasonFieldPlayers.length === 0 ? (
@@ -997,7 +1037,7 @@ export default function Home() {
 
             {pastMatches.length === 0 ? (
               <p className="text-xs text-zinc-500 bg-[#121215] p-4 rounded-xl border border-zinc-800/80 text-center">
-                Ainda não existem jogos registados no histórico para gerar o progresso.
+                Ainda não existem jogos oficiais registados para gerar o progresso da época.
               </p>
             ) : (
               <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
