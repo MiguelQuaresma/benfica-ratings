@@ -1,0 +1,43 @@
+// generate-icons.js
+const fs = require('fs');
+const path = require('path');
+
+const svgContent = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#1f1315"/>
+      <stop offset="100%" stop-color="#09090b"/>
+    </radialGradient>
+    <linearGradient id="redGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#b91c1c"/>
+    </linearGradient>
+    <!-- Estrela idêntica ao estilo do SLB -->
+    <g id="star">
+      <polygon points="0,-18 5.5,-5.5 18,-5.5 8.1,2.8 11.9,15.3 0,7.6 -11.9,15.3 -8.1,2.8 -18,-5.5 -5.5,-5.5" fill="#f59e0b"/>
+    </g>
+  </defs>
+
+  <!-- Fundo escuro premium com cantos arredondados -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGlow)"/>
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#27272a" stroke-width="4"/>
+
+  <!-- Brasão / Badge Circular Central -->
+  <circle cx="256" cy="270" r="160" fill="#141418" stroke="url(#redGrad)" stroke-width="8"/>
+
+  <!-- Três Estrelas em Fila Horizontal no Topo -->
+  <g>
+    <use href="#star" x="204" y="68"/>
+    <use href="#star" x="256" y="68"/>
+    <use href="#star" x="308" y="68"/>
+  </g>
+
+  <!-- Iniciais "BV" em Grande e Centradas -->
+  <text x="200" y="325" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="160" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-4">B</text>
+  <text x="312" y="325" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="160" font-weight="900" fill="#ef4444" text-anchor="middle" letter-spacing="-4">V</text>
+</svg>
+`;
+
+fs.writeFileSync(path.join(__dirname, 'public', 'icon.svg'), svgContent.trim());
+console.log('✓ public/icon.svg atualizado com sucesso: apenas 3 estrelas e BV!');
