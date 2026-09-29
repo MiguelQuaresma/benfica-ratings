@@ -177,9 +177,10 @@ export default function Home() {
   const [generatingCommunityCard, setGeneratingCommunityCard] = useState(false);
   const [lastRatedId, setLastRatedId] = useState<string | null>(null);
 
-  // Estado para o Mini Histograma de Votos
   const [selectedPlayerForHistogram, setSelectedPlayerForHistogram] = useState<string | null>(null);
-  const [histogramData, setHistogramData] = useState<Record<number, number>>({});
+  const [histogramData, setHistogramData] = useState<Record<number, number>>({
+    1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0,
+  });
   const [loadingHistogram, setLoadingHistogram] = useState(false);
 
   const userCardRef = useRef<HTMLDivElement>(null);
@@ -217,7 +218,7 @@ export default function Home() {
           setPlayers(sorted);
         }
 
-        const voterToken = localStorage.getItem('voter_token');
+        const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
         let userAlreadyVoted = false;
 
         if (voterToken) {
@@ -298,7 +299,6 @@ export default function Home() {
     if (data) setStats(data as Stat[]);
   }
 
-  // Carregar distribuição de votos de 1 a 10 de um jogador específico
   async function loadHistogram(playerId: string) {
     if (!activeMatch) return;
     if (selectedPlayerForHistogram === playerId) {
@@ -510,6 +510,7 @@ export default function Home() {
   };
 
   const motm = stats.find((s) => s.position !== 'TREINADOR');
+  const communityCoachStat = stats.find((s) => s.position === 'TREINADOR');
   const evaluatedCount = Object.keys(ratings).length;
   const progressPercent = players.length > 0 ? (evaluatedCount / players.length) * 100 : 0;
 
@@ -517,7 +518,8 @@ export default function Home() {
     .filter((p) => ratings[p.id] !== undefined && p.position !== 'TREINADOR')
     .sort((a, b) => (ratings[b.id] || 0) - (ratings[a.id] || 0))[0] || null;
 
-  // Cálculo da Média da Equipa no Jogo Atual (Para os Cartões)
+  const userCoachPlayer = players.find((p) => p.position === 'TREINADOR');
+
   const userRatingsArray = Object.values(ratings);
   const userMatchTeamAverage = userRatingsArray.length > 0
     ? (userRatingsArray.reduce((a, b) => a + b, 0) / userRatingsArray.length).toFixed(1)
@@ -544,7 +546,6 @@ export default function Home() {
 
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
 
-  // Filtragem por setor na matriz
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
     .filter((p) => (matrixSector === 'ALL' ? true : p.position === matrixSector))
@@ -573,8 +574,23 @@ export default function Home() {
     activeMatch.competition.toLowerCase().includes('teste')
   );
 
-  // Máximo do histograma para escala das barras
-  const maxHistogramCount = Math.max(...Object.values(histogramData), 1);
+  const countsValues = Object.values(histogramData);
+  const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
+
+  // Filtragem estrita para a grelha inferior dos cartões de partilha:
+  // 1. Remove o Treinador (que terá destaque próprio horizontal)
+  // 2. Remove o Homem do Jogo / Melhor em Campo (que já está em destaque no topo)
+  const userCardGridPlayers = players.filter((p) => {
+    if (p.position === 'TREINADOR') return false;
+    if (userBestPlayer && p.id === userBestPlayer.id) return false;
+    return true;
+  });
+
+  const communityCardGridStats = stats.filter((s) => {
+    if (s.position === 'TREINADOR') return false;
+    if (motm && s.player_id === motm.player_id) return false;
+    return true;
+  });
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 font-sans pb-16">
@@ -807,7 +823,7 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS COM MINI HISTOGRAMA INTERATIVO */}
+        {/* VISTA 2: RESULTADOS (COM BOTÕES COM HOVER/TOUCH DINÂMICO EM VEZ DE VERMELHO ESTÁTICO) */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
             <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3 max-w-xl mx-auto">
@@ -820,14 +836,15 @@ export default function Home() {
                 </p>
               </div>
 
+              {/* Botões sem vermelho fixo: ganham efeito vermelho apenas em Hover ou Touch */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                 {hasVoted && (
                   <button
                     onClick={handleGenerateUserCard}
                     disabled={generatingUserCard}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-98 shadow-md cursor-pointer"
+                    className="w-full bg-zinc-900/90 hover:bg-red-950/40 hover:border-red-600/80 active:bg-red-900/50 active:scale-98 text-zinc-200 hover:text-white border border-zinc-800 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                   >
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-zinc-400 group-hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                     {generatingUserCard ? 'A criar imagem...' : '📸 Gerar Cartão: Os Meus Votos'}
@@ -837,9 +854,9 @@ export default function Home() {
                 <button
                   onClick={handleGenerateCommunityCard}
                   disabled={generatingCommunityCard}
-                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-200 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider border border-zinc-700/80 flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer"
+                  className="w-full bg-zinc-900/90 hover:bg-red-950/40 hover:border-red-600/80 active:bg-red-900/50 active:scale-98 text-zinc-200 hover:text-white border border-zinc-800 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                 >
-                  <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                   {generatingCommunityCard ? 'A preparar cartão...' : '👥 Cartão: Pontuações dos Adeptos'}
@@ -883,7 +900,7 @@ export default function Home() {
                         <div>
                           <p className="font-bold text-xs md:text-sm text-white">{s.player_name}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className={`text-[8px] font-bold px-1 py-0.2 rounded border uppercase ${badgeClass}`}>
+                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded border uppercase ${badgeClass}`}>
                               {s.position}
                             </span>
                             <span className="text-[9px] text-zinc-500">
@@ -901,7 +918,6 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* MINI HISTOGRAMA / GRÁFICO DE BARRAS DE DISTRIBUIÇÃO */}
                     {isSelected && (
                       <div className="mt-3 pt-3 border-t border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-2">
@@ -955,7 +971,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 3: HISTÓRICO GERAL & CALENDÁRIO */}
+        {/* VISTA 3: HISTÓRICO GERAL */}
         {view === 'history' && (
           <div className="space-y-6">
             <div className="p-4 md:p-6 rounded-2xl bg-gradient-to-r from-[#141419] to-[#121215] border border-zinc-800 flex items-center justify-between shadow-sm">
@@ -1104,7 +1120,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM FILTROS POR SETOR) */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1122,7 +1138,6 @@ export default function Home() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 justify-between items-stretch sm:items-center">
-              {/* BOTÃO ALTERNADOR DE MODO */}
               <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 max-w-sm">
                 <button
                   type="button"
@@ -1148,7 +1163,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* FILTROS POR SETOR (TODOS / GR / DEF / MED / AVA) */}
               <div className="flex bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 gap-1 overflow-x-auto">
                 {(['ALL', 'GR', 'DEF', 'MED', 'AVA'] as const).map((sector) => (
                   <button
@@ -1194,7 +1208,6 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50 text-xs">
-                      {/* TREINADOR NO TOPO */}
                       {coachForMatrix && (
                         <>
                           <tr className="bg-amber-950/20 border-b border-amber-600/30">
@@ -1272,7 +1285,6 @@ export default function Home() {
                         </>
                       )}
 
-                      {/* JOGADORES DE CAMPO FILTRADOS */}
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
@@ -1378,11 +1390,13 @@ export default function Home() {
       </div>
 
       {/* =========================================================================
-          CARTÕES DE PARTILHA (COM MÉDIA GLOBAL DA EQUIPA EM DESTAQUE)
+          CARTÕES DE PARTILHA
+          1. Sem repetição do Melhor em Campo
+          2. Treinador destacado em bloco próprio
           ========================================================================= */}
       {activeMatch && (
         <>
-          {/* Cartão Pessoal */}
+          {/* CARTÃO DOS MEUS VOTOS */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={userCardRef}
@@ -1398,6 +1412,7 @@ export default function Home() {
                 justifyContent: 'space-between',
               }}
             >
+              {/* Header do Cartão */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
@@ -1416,10 +1431,10 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Destaque com Melhor Jogador + Média da Equipa */}
-              <div style={{ display: 'flex', gap: '10px', margin: '16px 0' }}>
+              {/* Destaque 1: Melhor em Campo + Média Global */}
+              <div style={{ display: 'flex', gap: '10px', margin: '14px 0 10px 0' }}>
                 {userBestPlayer && (
-                  <div style={{ flex: 1, padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ flex: 1, padding: '12px 14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <img
                         src={userBestPlayer.photo_url}
@@ -1428,7 +1443,7 @@ export default function Home() {
                         style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover' }}
                       />
                       <div>
-                        <span style={{ fontSize: '9px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor</span>
+                        <span style={{ fontSize: '9px', color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase' }}>★ O Meu Melhor em Campo</span>
                         <div style={{ fontSize: '14px', fontWeight: 800 }}>{userBestPlayer.name}</div>
                       </div>
                     </div>
@@ -1436,7 +1451,7 @@ export default function Home() {
                   </div>
                 )}
 
-                <div style={{ minWidth: '130px', padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #3f3f46', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                <div style={{ minWidth: '125px', padding: '12px 14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #3f3f46', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
                   <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>Média Equipa</span>
                   <div style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', marginTop: '2px' }}>
                     {userMatchTeamAverage} <span style={{ fontSize: '11px', color: '#71717a' }}>/10</span>
@@ -1444,8 +1459,30 @@ export default function Home() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
-                {players.map((p) => {
+              {/* Destaque 2: Treinador Representado em Bloco Próprio Diferenciado */}
+              {userCoachPlayer && (
+                <div style={{ padding: '10px 14px', backgroundColor: '#16130e', borderRadius: '14px', border: '1px solid #b45309', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <img
+                      src={userCoachPlayer.photo_url}
+                      alt={userCoachPlayer.name}
+                      crossOrigin="anonymous"
+                      style={{ width: '36px', height: '36px', borderRadius: '9px', objectFit: 'cover', border: '1px solid #d97706' }}
+                    />
+                    <div>
+                      <span style={{ fontSize: '8px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👔 Treinador / Mister</span>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#fef3c7' }}>{userCoachPlayer.name}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#f59e0b' }}>
+                    {ratings[userCoachPlayer.id] || '—'}
+                  </div>
+                </div>
+              )}
+
+              {/* Grelha inferior dos restantes jogadores de campo (sem repetições) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px', flex: 1 }}>
+                {userCardGridPlayers.map((p) => {
                   const score = ratings[p.id];
                   return (
                     <div
@@ -1454,7 +1491,7 @@ export default function Home() {
                         backgroundColor: '#121215',
                         border: '1px solid #27272a',
                         borderRadius: '10px',
-                        padding: '8px 10px',
+                        padding: '7px 10px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -1471,6 +1508,7 @@ export default function Home() {
                 })}
               </div>
 
+              {/* Footer do Cartão */}
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', color: '#71717a' }}>Vota também em</span>
                 <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
@@ -1478,7 +1516,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Cartão Comunidade */}
+          {/* CARTÃO DA COMUNIDADE */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={communityCardRef}
@@ -1494,6 +1532,7 @@ export default function Home() {
                 justifyContent: 'space-between',
               }}
             >
+              {/* Header do Cartão */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
@@ -1512,10 +1551,10 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Destaque com Homem do Jogo + Média da Equipa */}
-              <div style={{ display: 'flex', gap: '10px', margin: '16px 0' }}>
+              {/* Destaque 1: Homem do Jogo + Média Global */}
+              <div style={{ display: 'flex', gap: '10px', margin: '14px 0 10px 0' }}>
                 {motm && (
-                  <div style={{ flex: 1, padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ flex: 1, padding: '12px 14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <img
                         src={motm.photo_url}
@@ -1532,7 +1571,7 @@ export default function Home() {
                   </div>
                 )}
 
-                <div style={{ minWidth: '130px', padding: '14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #3f3f46', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                <div style={{ minWidth: '125px', padding: '12px 14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #3f3f46', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
                   <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 800, textTransform: 'uppercase' }}>Média Equipa</span>
                   <div style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', marginTop: '2px' }}>
                     {communityMatchTeamAverage} <span style={{ fontSize: '11px', color: '#71717a' }}>/10</span>
@@ -1540,15 +1579,37 @@ export default function Home() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', flex: 1 }}>
-                {stats.map((s) => (
+              {/* Destaque 2: Treinador Representado em Bloco Próprio Diferenciado */}
+              {communityCoachStat && (
+                <div style={{ padding: '10px 14px', backgroundColor: '#16130e', borderRadius: '14px', border: '1px solid #b45309', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <img
+                      src={communityCoachStat.photo_url}
+                      alt={communityCoachStat.player_name}
+                      crossOrigin="anonymous"
+                      style={{ width: '36px', height: '36px', borderRadius: '9px', objectFit: 'cover', border: '1px solid #d97706' }}
+                    />
+                    <div>
+                      <span style={{ fontSize: '8px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👔 Treinador / Mister</span>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#fef3c7' }}>{communityCoachStat.player_name}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#f59e0b' }}>
+                    {communityCoachStat.avg_score}
+                  </div>
+                </div>
+              )}
+
+              {/* Grelha inferior dos restantes jogadores de campo (sem repetições) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px', flex: 1 }}>
+                {communityCardGridStats.map((s) => (
                   <div
                     key={s.player_id}
                     style={{
                       backgroundColor: '#121215',
                       border: '1px solid #27272a',
                       borderRadius: '10px',
-                      padding: '8px 10px',
+                      padding: '7px 10px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -1562,6 +1623,7 @@ export default function Home() {
                 ))}
               </div>
 
+              {/* Footer do Cartão */}
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', color: '#71717a' }}>Votações da Comunidade</span>
                 <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
