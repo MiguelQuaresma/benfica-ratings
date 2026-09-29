@@ -168,6 +168,8 @@ export default function Home() {
   const [userMatrixScores, setUserMatrixScores] = useState<Record<string, Record<string, number>>>({});
   const [progressMode, setProgressMode] = useState<'community' | 'user'>('community');
   const [matrixSector, setMatrixSector] = useState<'ALL' | 'GR' | 'DEF' | 'MED' | 'AVA'>('ALL');
+  const [matrixSortMatchId, setMatrixSortMatchId] = useState<string | null>(null);
+
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [hasVoted, setHasVoted] = useState(false);
   const [view, setView] = useState<'vote' | 'results' | 'history' | 'matrix'>('vote');
@@ -177,6 +179,7 @@ export default function Home() {
   const [generatingCommunityCard, setGeneratingCommunityCard] = useState(false);
   const [lastRatedId, setLastRatedId] = useState<string | null>(null);
 
+  // Histograma de Votos isolado por jogador
   const [selectedPlayerForHistogram, setSelectedPlayerForHistogram] = useState<string | null>(null);
   const [histogramData, setHistogramData] = useState<Record<number, number>>({
     1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0,
@@ -546,10 +549,16 @@ export default function Home() {
 
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
 
+  // ORDENAÇÃO DINÂMICA DA MATRIZ: Se o utilizador clicou num jogo, ordena pelas notas desse jogo
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
     .filter((p) => (matrixSector === 'ALL' ? true : p.position === matrixSector))
     .sort((a, b) => {
+      if (matrixSortMatchId) {
+        const scoreA = activeMatrixScores[a.id]?.[matrixSortMatchId] ?? -1;
+        const scoreB = activeMatrixScores[b.id]?.[matrixSortMatchId] ?? -1;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
       const avgA = Number(seasonStatsMap.get(a.id)?.season_avg_score || 0);
       const avgB = Number(seasonStatsMap.get(b.id)?.season_avg_score || 0);
       if (avgA !== avgB) return avgB - avgA;
@@ -576,10 +585,8 @@ export default function Home() {
 
   const countsValues = Object.values(histogramData);
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
+  const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
-  // Filtragem estrita para a grelha inferior dos cartões de partilha:
-  // 1. Remove o Treinador (que terá destaque próprio horizontal)
-  // 2. Remove o Homem do Jogo / Melhor em Campo (que já está em destaque no topo)
   const userCardGridPlayers = players.filter((p) => {
     if (p.position === 'TREINADOR') return false;
     if (userBestPlayer && p.id === userBestPlayer.id) return false;
@@ -737,7 +744,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
               {players.map((p) => {
                 const currentScore = ratings[p.id];
                 const isCoach = p.position === 'TREINADOR';
@@ -823,7 +830,7 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS (COM BOTÕES COM HOVER/TOUCH DINÂMICO EM VEZ DE VERMELHO ESTÁTICO) */}
+        {/* VISTA 2: RESULTADOS (HISTOGRAMA ISOLADO E COM ALTURA PROPORCIONAL) */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
             <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3 max-w-xl mx-auto">
@@ -832,11 +839,10 @@ export default function Home() {
                   {hasVoted ? '✓ O teu voto está registado' : 'Resultados em Direto'}
                 </span>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Clica num jogador para abrir o gráfico de distribuição de votos:
+                  Clica num jogador para abrir a distribuição de votos:
                 </p>
               </div>
 
-              {/* Botões sem vermelho fixo: ganham efeito vermelho apenas em Hover ou Touch */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                 {hasVoted && (
                   <button
@@ -844,7 +850,7 @@ export default function Home() {
                     disabled={generatingUserCard}
                     className="w-full bg-zinc-900/90 hover:bg-red-950/40 hover:border-red-600/80 active:bg-red-900/50 active:scale-98 text-zinc-200 hover:text-white border border-zinc-800 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                   >
-                    <svg className="w-4 h-4 text-zinc-400 group-hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                     {generatingUserCard ? 'A criar imagem...' : '📸 Gerar Cartão: Os Meus Votos'}
@@ -879,7 +885,8 @@ export default function Home() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {/* ITENS-START GARANTE QUE O VIZINHO NÃO ESTICA NEM ABRE */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
               {stats.map((s, idx) => {
                 const isSelected = selectedPlayerForHistogram === s.player_id;
                 const userScore = ratings[s.player_id];
@@ -918,43 +925,62 @@ export default function Home() {
                       </div>
                     </div>
 
+                    {/* HISTOGRAMA DE BARRAS PROPORCIONAIS */}
                     {isSelected && (
-                      <div className="mt-3 pt-3 border-t border-zinc-800/80" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-2">
+                      <div className="mt-3 pt-3 border-t border-zinc-800/80 cursor-default" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-2.5">
                           <span className="text-[9px] font-black uppercase text-zinc-400">
-                            Distribuição das Notas (1 a 10)
+                            Volume de Votos por Nota (1 a 10)
                           </span>
                           {userScore && (
                             <span className="text-[9px] font-bold text-red-400 bg-red-950/40 px-1.5 py-0.5 rounded border border-red-900/40">
-                              O teu voto: {userScore}
+                              A tua nota: {userScore}
                             </span>
                           )}
                         </div>
 
                         {loadingHistogram ? (
-                          <p className="text-[10px] text-zinc-500 text-center py-2">A carregar distribuição...</p>
+                          <p className="text-[10px] text-zinc-500 text-center py-4">A carregar distribuição...</p>
                         ) : (
-                          <div className="grid grid-cols-10 gap-1 items-end h-16 pt-2">
+                          <div className="grid grid-cols-10 gap-1.5 items-end h-28 pt-2 bg-zinc-950/40 p-2 rounded-xl border border-zinc-800/40">
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
                               const count = histogramData[num] || 0;
-                              const heightPct = (count / maxHistogramCount) * 100;
                               const isUserPick = userScore === num;
+                              const heightPct = maxHistogramCount > 0 ? (count / maxHistogramCount) * 100 : 0;
+                              const pctOfTotal = totalHistogramVotes > 0 ? Math.round((count / totalHistogramVotes) * 100) : 0;
 
                               return (
-                                <div key={num} className="flex flex-col items-center h-full justify-end group">
-                                  <span className="text-[8px] font-bold text-zinc-500 mb-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {count}
+                                <div key={num} className="flex flex-col items-center h-full justify-end">
+                                  {/* Quantidade ou % visível em cima da barra */}
+                                  <span className={`text-[8px] font-bold mb-1 transition-all ${
+                                    count > 0 ? (isUserPick ? 'text-red-400 font-black' : 'text-zinc-400') : 'text-transparent'
+                                  }`}>
+                                    {count > 0 ? count : '·'}
                                   </span>
-                                  <div className="w-full bg-zinc-800/80 rounded-t h-full flex items-end overflow-hidden">
+
+                                  {/* Coluna / Caixa com tamanho correspondente ao número de votos */}
+                                  <div className="w-full bg-zinc-900 rounded-md h-full max-h-[64px] flex items-end p-0.5 overflow-hidden">
                                     <div
-                                      className={`w-full transition-all duration-300 rounded-t ${
-                                        isUserPick ? 'bg-red-500' : 'bg-zinc-600 hover:bg-zinc-400'
+                                      className={`w-full transition-all duration-500 rounded-sm ${
+                                        isUserPick
+                                          ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                                          : count === maxHistogramCount && count > 0
+                                          ? 'bg-zinc-200'
+                                          : count > 0
+                                          ? 'bg-zinc-600'
+                                          : 'bg-transparent'
                                       }`}
-                                      style={{ height: `${Math.max(heightPct, 6)}%` }}
-                                      title={`Nota ${num}: ${count} votos`}
+                                      style={{
+                                        height: count > 0 ? `${Math.max(heightPct, 12)}%` : '0%',
+                                      }}
+                                      title={`Nota ${num}: ${count} votos (${pctOfTotal}%)`}
                                     ></div>
                                   </div>
-                                  <span className={`text-[8px] font-bold mt-1 ${isUserPick ? 'text-red-400' : 'text-zinc-500'}`}>
+
+                                  {/* Número da Nota */}
+                                  <span className={`text-[9px] font-black mt-1.5 ${
+                                    isUserPick ? 'text-red-500 scale-110' : 'text-zinc-500'
+                                  }`}>
                                     {num}
                                   </span>
                                 </div>
@@ -1120,7 +1146,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM ORDENAÇÃO POR CLIQUE NO JOGO) */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1129,7 +1155,7 @@ export default function Home() {
                   Progresso de Época
                 </h3>
                 <p className="text-[10px] md:text-xs text-zinc-500">
-                  {progressMode === 'user' ? 'As tuas notas ao longo da temporada' : 'Médias da comunidade jogo a jogo'}
+                  Clica na coluna de um jogo para ordenar por essa partida:
                 </p>
               </div>
               <span className="text-[9px] md:text-[10px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-md">
@@ -1191,18 +1217,43 @@ export default function Home() {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-zinc-800/90 bg-zinc-900/90 text-[10px] md:text-xs font-black text-zinc-400 uppercase tracking-wider">
-                        <th className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] w-fit whitespace-nowrap">
-                          Nome
+                        <th 
+                          onClick={() => setMatrixSortMatchId(null)}
+                          className="py-2.5 px-3 sticky left-0 z-20 bg-zinc-900 shadow-[2px_0_5px_rgba(0,0,0,0.5)] w-fit whitespace-nowrap cursor-pointer hover:text-white"
+                          title="Repor ordenação geral por média"
+                        >
+                          Nome {matrixSortMatchId === null && <span className="text-red-500">↓</span>}
                         </th>
 
-                        {pastMatches.map((m) => (
-                          <th key={m.id} className="py-2 px-2 text-center min-w-[48px] border-l border-zinc-800/60" title={`${m.opponent} (${m.competition})`}>
-                            <span className="block text-[10px] md:text-xs text-zinc-300 font-black">{getOpponentAbbr(m.opponent)}</span>
-                            <span className="block text-[8px] md:text-[9px] text-zinc-500 font-semibold">{m.is_home !== false ? 'C' : 'F'}</span>
-                          </th>
-                        ))}
+                        {/* CLIQUE NA COLUNA DO JOGO PARA ORDENAR POR ESSE JOGO */}
+                        {pastMatches.map((m) => {
+                          const isSortedByThis = matrixSortMatchId === m.id;
+                          return (
+                            <th
+                              key={m.id}
+                              onClick={() => setMatrixSortMatchId(isSortedByThis ? null : m.id)}
+                              className={`py-2 px-2 text-center min-w-[50px] border-l border-zinc-800/60 cursor-pointer transition-colors ${
+                                isSortedByThis
+                                  ? 'bg-red-950/60 text-red-300 border-red-800/80'
+                                  : 'hover:bg-zinc-800/80'
+                              }`}
+                              title={`Ordenar jogadores pela exibição contra ${m.opponent}`}
+                            >
+                              <span className={`block text-[10px] md:text-xs font-black ${isSortedByThis ? 'text-red-400' : 'text-zinc-300'}`}>
+                                {getOpponentAbbr(m.opponent)} {isSortedByThis && '↓'}
+                              </span>
+                              <span className="block text-[8px] md:text-[9px] text-zinc-500 font-semibold">
+                                {m.is_home !== false ? 'C' : 'F'}
+                              </span>
+                            </th>
+                          );
+                        })}
 
-                        <th className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90">
+                        <th 
+                          onClick={() => setMatrixSortMatchId(null)}
+                          className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90 cursor-pointer hover:text-red-300"
+                          title="Ordenar por média geral"
+                        >
                           {progressMode === 'user' ? 'Nota' : 'Média'}
                         </th>
                       </tr>
@@ -1279,12 +1330,13 @@ export default function Home() {
                               colSpan={pastMatches.length + 2}
                               className="py-1 px-3 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-zinc-400 sticky left-0 z-10"
                             >
-                              ⚽ PLANTEL {matrixSector !== 'ALL' ? `(${matrixSector})` : ''}
+                              ⚽ PLANTEL {matrixSector !== 'ALL' ? `(${matrixSector})` : ''} {matrixSortMatchId && '(Ordenado por Jogo)'}
                             </td>
                           </tr>
                         </>
                       )}
 
+                      {/* JOGADORES COM ORDENAÇÃO DINÂMICA */}
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
@@ -1320,9 +1372,10 @@ export default function Home() {
                               const score = playerScores[m.id];
                               const hasPlayed = score !== undefined && score > 0;
                               const cellTheme = hasPlayed ? getScoreTheme(score) : null;
+                              const isSortedMatch = matrixSortMatchId === m.id;
 
                               return (
-                                <td key={m.id} className="py-1.5 px-1 text-center border-l border-zinc-800/50">
+                                <td key={m.id} className={`py-1.5 px-1 text-center border-l border-zinc-800/50 ${isSortedMatch ? 'bg-red-950/20' : ''}`}>
                                   {hasPlayed ? (
                                     <div className={`w-8 h-7 md:w-9 md:h-7 mx-auto rounded flex items-center justify-center font-black text-[11px] md:text-xs border ${cellTheme?.matrixBg}`}>
                                       {score.toFixed(1)}
@@ -1390,9 +1443,7 @@ export default function Home() {
       </div>
 
       {/* =========================================================================
-          CARTÕES DE PARTILHA
-          1. Sem repetição do Melhor em Campo
-          2. Treinador destacado em bloco próprio
+          CARTÕES DE PARTILHA COM TREINADOR SEPARADO E SEM DUPLICAR MOTM
           ========================================================================= */}
       {activeMatch && (
         <>
@@ -1412,7 +1463,6 @@ export default function Home() {
                 justifyContent: 'space-between',
               }}
             >
-              {/* Header do Cartão */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
@@ -1431,7 +1481,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Destaque 1: Melhor em Campo + Média Global */}
               <div style={{ display: 'flex', gap: '10px', margin: '14px 0 10px 0' }}>
                 {userBestPlayer && (
                   <div style={{ flex: 1, padding: '12px 14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1459,7 +1508,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Destaque 2: Treinador Representado em Bloco Próprio Diferenciado */}
               {userCoachPlayer && (
                 <div style={{ padding: '10px 14px', backgroundColor: '#16130e', borderRadius: '14px', border: '1px solid #b45309', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1480,7 +1528,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Grelha inferior dos restantes jogadores de campo (sem repetições) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px', flex: 1 }}>
                 {userCardGridPlayers.map((p) => {
                   const score = ratings[p.id];
@@ -1508,7 +1555,6 @@ export default function Home() {
                 })}
               </div>
 
-              {/* Footer do Cartão */}
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', color: '#71717a' }}>Vota também em</span>
                 <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
@@ -1532,7 +1578,6 @@ export default function Home() {
                 justifyContent: 'space-between',
               }}
             >
-              {/* Header do Cartão */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #27272a', paddingBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img src={BENFICA_LOGO_URL} alt="SLB" crossOrigin="anonymous" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
@@ -1551,7 +1596,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Destaque 1: Homem do Jogo + Média Global */}
               <div style={{ display: 'flex', gap: '10px', margin: '14px 0 10px 0' }}>
                 {motm && (
                   <div style={{ flex: 1, padding: '12px 14px', backgroundColor: '#141418', borderRadius: '16px', border: '1px solid #dc2626', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1579,7 +1623,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Destaque 2: Treinador Representado em Bloco Próprio Diferenciado */}
               {communityCoachStat && (
                 <div style={{ padding: '10px 14px', backgroundColor: '#16130e', borderRadius: '14px', border: '1px solid #b45309', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1600,7 +1643,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Grelha inferior dos restantes jogadores de campo (sem repetições) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px', flex: 1 }}>
                 {communityCardGridStats.map((s) => (
                   <div
@@ -1623,7 +1665,6 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Footer do Cartão */}
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', color: '#71717a' }}>Votações da Comunidade</span>
                 <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
