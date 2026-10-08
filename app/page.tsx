@@ -377,10 +377,10 @@ export default function Home() {
     setLoadingHistogram(false);
   }
 
+  // Carrega apenas jogos com votação oficialmente fechada no Admin (is_open_for_voting = false)
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
-    // Carrega TODOS os jogos fechados (incluindo testes e jogos manuais)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -407,6 +407,7 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
+    // Carregar notas da comunidade APENAS para os jogos terminados
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -424,6 +425,7 @@ export default function Home() {
       setCommunityMatrixScores(matrixMap);
     }
 
+    // Carregar os votos do utilizador APENAS para os jogos terminados
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -501,7 +503,6 @@ export default function Home() {
 
       setHasVoted(true);
       await loadStats(activeMatch.id);
-      await loadHistoryAndMatrix();
       setView('results');
     } catch (err) {
       console.error(err);
@@ -615,6 +616,7 @@ export default function Home() {
 
   const coachForMatrix = squadForMatrix.find((p) => p.position === 'TREINADOR') || null;
 
+  // Calcula a média das notas do utilizador para um jogador em jogos já finalizados
   const getUserPlayerAverage = (playerId: string) => {
     const pScores = userMatrixScores[playerId];
     if (!pScores) return null;
@@ -895,7 +897,7 @@ export default function Home() {
                     disabled={generatingUserCard}
                     className="w-full bg-zinc-900/90 hover:bg-red-950/40 hover:border-red-600/80 active:bg-red-900/50 active:scale-98 text-zinc-200 hover:text-white border border-zinc-800 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                   >
-                    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-zinc-400 group-hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                     {generatingUserCard ? 'A criar imagem...' : '📸 Gerar Cartão: Os Meus Votos'}
@@ -1186,7 +1188,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM "MÉDIA" TANTO EM COMUNIDADE COMO NOS MEUS VOTOS) */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1249,7 +1251,7 @@ export default function Home() {
 
             {pastMatches.length === 0 ? (
               <p className="text-xs text-zinc-500 bg-[#121215] p-4 rounded-xl border border-zinc-800/80 text-center">
-                Ainda não existem jogos registados para gerar o progresso da época.
+                Ainda não existem jogos finalizados para gerar o progresso da época.
               </p>
             ) : (
               <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
@@ -1288,12 +1290,13 @@ export default function Home() {
                           );
                         })}
 
+                        {/* MUDADO AQUI: Mostra sempre "Média" */}
                         <th 
                           onClick={() => setMatrixSortMatchId(null)}
                           className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90 cursor-pointer hover:text-red-300"
-                          title="Ordenar por média geral"
+                          title="Ordenar por média"
                         >
-                          {progressMode === 'user' ? 'Nota' : 'Média'}
+                          Média
                         </th>
                       </tr>
                     </thead>
