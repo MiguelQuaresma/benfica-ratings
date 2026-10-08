@@ -525,7 +525,8 @@ export default function Home() {
         await navigator.share({
           files: [file],
           title,
-          text: `Avaliações no jogo do SL Benfica! #SLBenfica`,
+          text: `As minhas notas no jogo do SL Benfica! Vota também aqui 👉 https://benfica-ratings-vax7.vercel.app/ #SLBenfica`,
+          url: 'https://benfica-ratings-vax7.vercel.app/',
         });
       } else {
         const url = URL.createObjectURL(blob);
