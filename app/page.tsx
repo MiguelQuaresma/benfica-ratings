@@ -186,8 +186,61 @@ export default function Home() {
   });
   const [loadingHistogram, setLoadingHistogram] = useState(false);
 
+  // Estados da Notificação de Instalação PWA
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+
   const userCardRef = useRef<HTMLDivElement>(null);
   const communityCardRef = useRef<HTMLDivElement>(null);
+
+  // Detetar evento de instalação PWA e dispositivo iOS
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    const dismissed = localStorage.getItem('bv_install_dismissed');
+
+    if (!isStandalone && !dismissed) {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      const isApple = /iphone|ipad|ipod/.test(userAgent);
+      setIsIOS(isApple);
+
+      const handler = (e: any) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+        setShowInstallPrompt(true);
+      };
+
+      window.addEventListener('beforeinstallprompt', handler);
+
+      // No iOS, como o safari não tem beforeinstallprompt, mostramos o aviso com um delay
+      if (isApple) {
+        const timer = setTimeout(() => {
+          setShowInstallPrompt(true);
+        }, 1500);
+        return () => clearTimeout(timer);
+      }
+
+      return () => window.removeEventListener('beforeinstallprompt', handler);
+    }
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const choiceResult = await deferredPrompt.userChoice;
+      if (choiceResult.outcome === 'accepted') {
+        setShowInstallPrompt(false);
+      }
+      setDeferredPrompt(null);
+    }
+  };
+
+  const handleDismissInstall = () => {
+    setShowInstallPrompt(false);
+    localStorage.setItem('bv_install_dismissed', 'true');
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -549,7 +602,6 @@ export default function Home() {
 
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
 
-  // ORDENAÇÃO DINÂMICA DA MATRIZ: Se o utilizador clicou num jogo, ordena pelas notas desse jogo
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
     .filter((p) => (matrixSector === 'ALL' ? true : p.position === matrixSector))
@@ -830,7 +882,7 @@ export default function Home() {
           </>
         )}
 
-        {/* VISTA 2: RESULTADOS (HISTOGRAMA ISOLADO E COM ALTURA PROPORCIONAL) */}
+        {/* VISTA 2: RESULTADOS */}
         {activeMatch && view === 'results' && (
           <div className="space-y-4">
             <div className="p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800 text-center space-y-3 max-w-xl mx-auto">
@@ -850,7 +902,7 @@ export default function Home() {
                     disabled={generatingUserCard}
                     className="w-full bg-zinc-900/90 hover:bg-red-950/40 hover:border-red-600/80 active:bg-red-900/50 active:scale-98 text-zinc-200 hover:text-white border border-zinc-800 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                   >
-                    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-zinc-400 group-hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                     {generatingUserCard ? 'A criar imagem...' : '📸 Gerar Cartão: Os Meus Votos'}
@@ -885,7 +937,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* ITENS-START GARANTE QUE O VIZINHO NÃO ESTICA NEM ABRE */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
               {stats.map((s, idx) => {
                 const isSelected = selectedPlayerForHistogram === s.player_id;
@@ -925,7 +976,6 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* HISTOGRAMA DE BARRAS PROPORCIONAIS */}
                     {isSelected && (
                       <div className="mt-3 pt-3 border-t border-zinc-800/80 cursor-default" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-2.5">
@@ -951,14 +1001,12 @@ export default function Home() {
 
                               return (
                                 <div key={num} className="flex flex-col items-center h-full justify-end">
-                                  {/* Quantidade ou % visível em cima da barra */}
                                   <span className={`text-[8px] font-bold mb-1 transition-all ${
                                     count > 0 ? (isUserPick ? 'text-red-400 font-black' : 'text-zinc-400') : 'text-transparent'
                                   }`}>
                                     {count > 0 ? count : '·'}
                                   </span>
 
-                                  {/* Coluna / Caixa com tamanho correspondente ao número de votos */}
                                   <div className="w-full bg-zinc-900 rounded-md h-full max-h-[64px] flex items-end p-0.5 overflow-hidden">
                                     <div
                                       className={`w-full transition-all duration-500 rounded-sm ${
@@ -977,7 +1025,6 @@ export default function Home() {
                                     ></div>
                                   </div>
 
-                                  {/* Número da Nota */}
                                   <span className={`text-[9px] font-black mt-1.5 ${
                                     isUserPick ? 'text-red-500 scale-110' : 'text-zinc-500'
                                   }`}>
@@ -1146,7 +1193,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM ORDENAÇÃO POR CLIQUE NO JOGO) */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1225,7 +1272,6 @@ export default function Home() {
                           Nome {matrixSortMatchId === null && <span className="text-red-500">↓</span>}
                         </th>
 
-                        {/* CLIQUE NA COLUNA DO JOGO PARA ORDENAR POR ESSE JOGO */}
                         {pastMatches.map((m) => {
                           const isSortedByThis = matrixSortMatchId === m.id;
                           return (
@@ -1336,7 +1382,6 @@ export default function Home() {
                         </>
                       )}
 
-                      {/* JOGADORES COM ORDENAÇÃO DINÂMICA */}
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
                         const seasonEntry = seasonStatsMap.get(p.id);
@@ -1443,8 +1488,66 @@ export default function Home() {
       </div>
 
       {/* =========================================================================
-          CARTÕES DE PARTILHA COM TREINADOR SEPARADO E SEM DUPLICAR MOTM
+          BOTÃO DISCRETO DE E-MAIL (CANTO INFERIOR DIREITO)
           ========================================================================= */}
+      <div className="fixed bottom-4 right-4 z-40">
+        <a
+          href="mailto:benficavote@gmail.com?subject=Feedback%20BenficaVote"
+          className="group flex items-center gap-2 bg-zinc-900/80 hover:bg-zinc-800/90 text-zinc-400 hover:text-white px-3 py-2 rounded-full border border-zinc-800/80 backdrop-blur-md shadow-lg transition-all"
+          title="Contacto: benficavote@gmail.com"
+        >
+          <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          <span className="text-[10px] font-bold tracking-tight opacity-70 group-hover:opacity-100 transition-opacity">
+            benficavote@gmail.com
+          </span>
+        </a>
+      </div>
+
+      {/* =========================================================================
+          NOTIFICAÇÃO FLUTUANTE DE INSTALAÇÃO PWA
+          ========================================================================= */}
+      {showInstallPrompt && (
+        <aside
+          aria-label="Notificação de instalação"
+          className="fixed bottom-14 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
+          <div className="bg-[#121216]/95 border border-zinc-700/80 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <BenficaEmblem className="w-10 h-10 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-black text-white">Instalar BenficaVote</p>
+                <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">
+                  {isIOS
+                    ? 'Toca em Partilhar ⎋ e depois "Adicionar ao Ecrã Principal"'
+                    : 'Adiciona a app ao ecrã para votar após cada jogo'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {!isIOS && deferredPrompt && (
+                <button
+                  onClick={handleInstallApp}
+                  className="bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase px-3 py-1.5 rounded-xl transition-all shadow"
+                >
+                  Instalar
+                </button>
+              )}
+              <button
+                onClick={handleDismissInstall}
+                className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold transition-all"
+                title="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* CARTÕES DE PARTILHA OCULTOS */}
       {activeMatch && (
         <>
           {/* CARTÃO DOS MEUS VOTOS */}
