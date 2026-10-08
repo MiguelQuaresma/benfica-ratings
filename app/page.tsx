@@ -377,7 +377,6 @@ export default function Home() {
     setLoadingHistogram(false);
   }
 
-  // Carrega apenas jogos com votação oficialmente fechada no Admin (is_open_for_voting = false)
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
@@ -407,7 +406,6 @@ export default function Home() {
       setAllSquad(sortedSquad);
     }
 
-    // Carregar notas da comunidade APENAS para os jogos terminados
     const { data: allScores } = await supabase
       .from('match_player_stats')
       .select('match_id, player_id, avg_score');
@@ -425,7 +423,6 @@ export default function Home() {
       setCommunityMatrixScores(matrixMap);
     }
 
-    // Carregar os votos do utilizador APENAS para os jogos terminados
     const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
     if (voterToken) {
       const { data: userAllVotes } = await supabase
@@ -591,10 +588,22 @@ export default function Home() {
     ? (allSeasonScores.reduce((acc, curr) => acc + curr, 0) / allSeasonScores.length).toFixed(1)
     : '0.0';
 
-  const seasonStatsMap = new Map(seasonStats.map((s) => [s.player_id, s]));
   const squadForMatrix = allSquad.length > 0 ? allSquad : (seasonStats as any);
 
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
+
+  // Função unificada que calcula a média da coluna final da matriz apenas a partir dos jogos fechados
+  const getMatrixPlayerAverage = (playerId: string) => {
+    const pScores = activeMatrixScores[playerId];
+    if (!pScores) return null;
+
+    const validScores = pastMatches
+      .map((m) => pScores[m.id])
+      .filter((s) => typeof s === 'number' && !isNaN(s) && s > 0);
+
+    if (validScores.length === 0) return null;
+    return (validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1);
+  };
 
   const outfieldSquad = squadForMatrix
     .filter((p) => p.position !== 'TREINADOR')
@@ -605,8 +614,8 @@ export default function Home() {
         const scoreB = activeMatrixScores[b.id]?.[matrixSortMatchId] ?? -1;
         if (scoreA !== scoreB) return scoreB - scoreA;
       }
-      const avgA = Number(seasonStatsMap.get(a.id)?.season_avg_score || 0);
-      const avgB = Number(seasonStatsMap.get(b.id)?.season_avg_score || 0);
+      const avgA = Number(getMatrixPlayerAverage(a.id) || 0);
+      const avgB = Number(getMatrixPlayerAverage(b.id) || 0);
       if (avgA !== avgB) return avgB - avgA;
       const orderA = POSITION_ORDER[a.position] || 99;
       const orderB = POSITION_ORDER[b.position] || 99;
@@ -615,15 +624,6 @@ export default function Home() {
     });
 
   const coachForMatrix = squadForMatrix.find((p) => p.position === 'TREINADOR') || null;
-
-  // Calcula a média das notas do utilizador para um jogador em jogos já finalizados
-  const getUserPlayerAverage = (playerId: string) => {
-    const pScores = userMatrixScores[playerId];
-    if (!pScores) return null;
-    const scores = Object.values(pScores).filter((s) => typeof s === 'number' && s > 0);
-    if (scores.length === 0) return null;
-    return (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
-  };
 
   const isTestMatch = activeMatch && (
     activeMatch.opponent.toLowerCase().includes('teste') ||
@@ -1188,7 +1188,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM "MÉDIA" TANTO EM COMUNIDADE COMO NOS MEUS VOTOS) */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM MÉDIA BLINDADA APENAS COM JOGOS FECHADOS) */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1290,7 +1290,6 @@ export default function Home() {
                           );
                         })}
 
-                        {/* MUDADO AQUI: Mostra sempre "Média" */}
                         <th 
                           onClick={() => setMatrixSortMatchId(null)}
                           className="py-2.5 px-3 text-center border-l border-zinc-800 min-w-[55px] text-red-400 bg-zinc-900/90 cursor-pointer hover:text-red-300"
@@ -1348,14 +1347,7 @@ export default function Home() {
 
                             <td className="py-1.5 px-2 text-center border-l border-zinc-800 bg-[#191512]">
                               {(() => {
-                                const userCoachAvg = getUserPlayerAverage(coachForMatrix.id);
-                                const coachSeason = seasonStatsMap.get(coachForMatrix.id);
-                                const commCoachAvg = coachSeason && Number(coachSeason.season_avg_score) > 0
-                                  ? Number(coachSeason.season_avg_score).toFixed(1)
-                                  : null;
-
-                                const displayCoachAvg = progressMode === 'user' ? userCoachAvg : commCoachAvg;
-
+                                const displayCoachAvg = getMatrixPlayerAverage(coachForMatrix.id);
                                 return displayCoachAvg ? (
                                   <span className="font-black text-xs md:text-sm text-amber-400">
                                     {displayCoachAvg}
@@ -1380,14 +1372,7 @@ export default function Home() {
 
                       {outfieldSquad.map((p, idx) => {
                         const playerScores = activeMatrixScores[p.id] || {};
-                        const seasonEntry = seasonStatsMap.get(p.id);
-
-                        const userAvg = getUserPlayerAverage(p.id);
-                        const communityAvg = seasonEntry && Number(seasonEntry.season_avg_score) > 0
-                          ? Number(seasonEntry.season_avg_score).toFixed(1)
-                          : null;
-
-                        const displayAvg = progressMode === 'user' ? userAvg : communityAvg;
+                        const displayAvg = getMatrixPlayerAverage(p.id);
                         const avgTheme = displayAvg ? getScoreTheme(Number(displayAvg)) : null;
 
                         return (
