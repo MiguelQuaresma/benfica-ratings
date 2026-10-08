@@ -179,14 +179,12 @@ export default function Home() {
   const [generatingCommunityCard, setGeneratingCommunityCard] = useState(false);
   const [lastRatedId, setLastRatedId] = useState<string | null>(null);
 
-  // Histograma de Votos isolado por jogador
   const [selectedPlayerForHistogram, setSelectedPlayerForHistogram] = useState<string | null>(null);
   const [histogramData, setHistogramData] = useState<Record<number, number>>({
     1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0,
   });
   const [loadingHistogram, setLoadingHistogram] = useState(false);
 
-  // Estados da Notificação de Instalação PWA
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
@@ -194,7 +192,6 @@ export default function Home() {
   const userCardRef = useRef<HTMLDivElement>(null);
   const communityCardRef = useRef<HTMLDivElement>(null);
 
-  // Detetar evento de instalação PWA e dispositivo iOS
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -214,7 +211,6 @@ export default function Home() {
 
       window.addEventListener('beforeinstallprompt', handler);
 
-      // No iOS, como o safari não tem beforeinstallprompt, mostramos o aviso com um delay
       if (isApple) {
         const timer = setTimeout(() => {
           setShowInstallPrompt(true);
@@ -310,8 +306,6 @@ export default function Home() {
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
-        .not('opponent', 'ilike', '%teste%')
-        .not('competition', 'ilike', '%teste%')
         .gte('date', nowIso)
         .order('date', { ascending: true });
 
@@ -386,13 +380,12 @@ export default function Home() {
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
+    // Carrega TODOS os jogos fechados (incluindo testes e jogos manuais)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
       .eq('is_open_for_voting', false)
       .lt('date', nowIso)
-      .not('opponent', 'ilike', '%teste%')
-      .not('competition', 'ilike', '%teste%')
       .order('date', { ascending: true })
       .limit(20);
 
@@ -902,7 +895,7 @@ export default function Home() {
                     disabled={generatingUserCard}
                     className="w-full bg-zinc-900/90 hover:bg-red-950/40 hover:border-red-600/80 active:bg-red-900/50 active:scale-98 text-zinc-200 hover:text-white border border-zinc-800 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
                   >
-                    <svg className="w-4 h-4 text-zinc-400 group-hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                     {generatingUserCard ? 'A criar imagem...' : '📸 Gerar Cartão: Os Meus Votos'}
@@ -1053,7 +1046,7 @@ export default function Home() {
                   Registo Acumulado
                 </span>
                 <h3 className="text-sm md:text-lg font-bold text-white">Média Global do Plantel</h3>
-                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{pastMatches.length} partidas oficiais disputadas</p>
+                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
               </div>
               <div className="text-right">
                 <span className="text-3xl md:text-4xl font-black text-red-500">{globalAverage}</span>
@@ -1066,7 +1059,7 @@ export default function Home() {
                 <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400">
                   Top da Temporada (Jogadores)
                 </h3>
-                <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Médias oficiais</span>
+                <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Médias acumuladas</span>
               </div>
 
               {seasonFieldPlayers.length === 0 ? (
@@ -1169,7 +1162,7 @@ export default function Home() {
               </h3>
               {pastMatches.length === 0 ? (
                 <p className="text-xs text-zinc-500 bg-[#121215] p-3.5 rounded-xl border border-zinc-800/80 text-center">
-                  Ainda não foram disputados jogos oficiais nesta época.
+                  Ainda não foram disputados jogos nesta época.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1256,7 +1249,7 @@ export default function Home() {
 
             {pastMatches.length === 0 ? (
               <p className="text-xs text-zinc-500 bg-[#121215] p-4 rounded-xl border border-zinc-800/80 text-center">
-                Ainda não existem jogos oficiais registados para gerar o progresso da época.
+                Ainda não existem jogos registados para gerar o progresso da época.
               </p>
             ) : (
               <div className="bg-[#101014] border border-zinc-800/90 rounded-2xl overflow-hidden shadow-xl">
@@ -1487,9 +1480,7 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* =========================================================================
-          BOTÃO DISCRETO DE E-MAIL (CANTO INFERIOR DIREITO)
-          ========================================================================= */}
+      {/* BOTÃO DISCRETO DE E-MAIL */}
       <div className="fixed bottom-4 right-4 z-40">
         <a
           href="mailto:benficavote@gmail.com?subject=Feedback%20BenficaVote"
@@ -1505,9 +1496,7 @@ export default function Home() {
         </a>
       </div>
 
-      {/* =========================================================================
-          NOTIFICAÇÃO FLUTUANTE DE INSTALAÇÃO PWA
-          ========================================================================= */}
+      {/* NOTIFICAÇÃO DE INSTALAÇÃO PWA */}
       {showInstallPrompt && (
         <aside
           aria-label="Notificação de instalação"
@@ -1550,7 +1539,6 @@ export default function Home() {
       {/* CARTÕES DE PARTILHA OCULTOS */}
       {activeMatch && (
         <>
-          {/* CARTÃO DOS MEUS VOTOS */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={userCardRef}
@@ -1665,7 +1653,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* CARTÃO DA COMUNIDADE */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={communityCardRef}
