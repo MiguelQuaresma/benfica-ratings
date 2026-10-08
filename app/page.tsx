@@ -324,10 +324,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!upcomingMatch?.date) return;
-    const interval = setInterval(() => {
+
+    const calculateTime = () => {
       const diff = new Date(upcomingMatch.date).getTime() - new Date().getTime();
       if (diff <= 0) {
-        clearInterval(interval);
+        setTimeLeft({ d: 0, h: 0, m: 0, s: 0 });
       } else {
         setTimeLeft({
           d: Math.floor(diff / (1000 * 60 * 60 * 24)),
@@ -336,7 +337,10 @@ export default function Home() {
           s: Math.floor((diff / 1000) % 60),
         });
       }
-    }, 1000);
+    };
+
+    calculateTime();
+    const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
   }, [upcomingMatch]);
 
@@ -525,7 +529,7 @@ export default function Home() {
         await navigator.share({
           files: [file],
           title,
-          text: `As minhas notas no jogo do SL Benfica! Vota também aqui 👉 https://benfica-ratings-vax7.vercel.app/ #SLBenfica`,
+          text: `#SLBenfica As minhas notas no jogo do SL Benfica! Vota também aqui 👉  `,
           url: 'https://benfica-ratings-vax7.vercel.app/',
         });
       } else {
@@ -634,6 +638,8 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
+  const isTimerFinished = timeLeft.d === 0 && timeLeft.h === 0 && timeLeft.m === 0 && timeLeft.s === 0;
+
   const userCardGridPlayers = players.filter((p) => {
     if (p.position === 'TREINADOR') return false;
     if (userBestPlayer && p.id === userBestPlayer.id) return false;
@@ -684,19 +690,26 @@ export default function Home() {
             </h2>
             <p className="text-[11px] md:text-xs text-zinc-500">{upcomingMatch.competition}</p>
 
-            <div className="grid grid-cols-4 gap-2 mt-3 max-w-xs md:max-w-sm mx-auto">
-              {[
-                { label: 'DIAS', val: timeLeft.d },
-                { label: 'HORAS', val: timeLeft.h },
-                { label: 'MIN', val: timeLeft.m },
-                { label: 'SEG', val: timeLeft.s },
-              ].map((t, idx) => (
-                <div key={idx} className="bg-zinc-900 py-1.5 md:py-2 rounded-xl border border-zinc-800/60">
-                  <span className="block text-base md:text-xl font-black text-red-500 leading-tight">{t.val}</span>
-                  <span className="text-[8px] md:text-[9px] font-bold text-zinc-500">{t.label}</span>
-                </div>
-              ))}
-            </div>
+            {isTimerFinished ? (
+              <div className="mt-3 inline-flex items-center gap-2 bg-red-950/40 border border-red-800/50 px-3.5 py-1.5 rounded-full text-xs font-bold text-red-400">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                🔴 Jogo a decorrer — Votação abre no apito final
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2 mt-3 max-w-xs md:max-w-sm mx-auto">
+                {[
+                  { label: 'DIAS', val: timeLeft.d },
+                  { label: 'HORAS', val: timeLeft.h },
+                  { label: 'MIN', val: timeLeft.m },
+                  { label: 'SEG', val: timeLeft.s },
+                ].map((t, idx) => (
+                  <div key={idx} className="bg-zinc-900 py-1.5 md:py-2 rounded-xl border border-zinc-800/60">
+                    <span className="block text-base md:text-xl font-black text-red-500 leading-tight">{t.val}</span>
+                    <span className="text-[8px] md:text-[9px] font-bold text-zinc-500">{t.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -778,7 +791,6 @@ export default function Home() {
               </span>
             </div>
 
-            {/* BARRA DE PROGRESSO COM FRASE DE VOTAÇÃO BLOQUEADA QUANDO JÁ SE VOTOU */}
             <div className="mb-4">
               <div className="flex justify-between text-[11px] md:text-xs font-medium mb-1">
                 {hasVoted ? (
@@ -1752,7 +1764,7 @@ export default function Home() {
 
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', color: '#71717a' }}>Votações da Comunidade</span>
-                <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
+                <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benfica-ratings-vax7.vercel.app</span>
               </div>
             </div>
           </div>
