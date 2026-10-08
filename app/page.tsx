@@ -592,7 +592,6 @@ export default function Home() {
 
   const activeMatrixScores = progressMode === 'user' ? userMatrixScores : communityMatrixScores;
 
-  // Função unificada que calcula a média da coluna final da matriz apenas a partir dos jogos fechados
   const getMatrixPlayerAverage = (playerId: string) => {
     const pScores = activeMatrixScores[playerId];
     if (!pScores) return null;
@@ -778,10 +777,17 @@ export default function Home() {
               </span>
             </div>
 
+            {/* BARRA DE PROGRESSO COM FRASE DE VOTAÇÃO BLOQUEADA QUANDO JÁ SE VOTOU */}
             <div className="mb-4">
-              <div className="flex justify-between text-[11px] md:text-xs font-medium text-zinc-400 mb-1">
-                <span>{hasVoted ? 'Voto gravado no telemóvel' : 'Progresso das notas'}</span>
-                <span>{Math.round(progressPercent)}%</span>
+              <div className="flex justify-between text-[11px] md:text-xs font-medium mb-1">
+                {hasVoted ? (
+                  <span className="text-red-400 font-bold flex items-center gap-1.5">
+                    <span>🔒</span> Votação Bloqueada
+                  </span>
+                ) : (
+                  <span className="text-zinc-400">Progresso das notas</span>
+                )}
+                <span className="text-zinc-400">{Math.round(progressPercent)}%</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                 <div
@@ -1188,7 +1194,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* VISTA 4: PROGRESSO DE ÉPOCA (COM MÉDIA BLINDADA APENAS COM JOGOS FECHADOS) */}
+        {/* VISTA 4: PROGRESSO DE ÉPOCA */}
         {view === 'matrix' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
