@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
-const APP_URL = 'https://benficavote.vercel.app';
+const APP_URL = 'https://benfica-ratings-vax7.vercel.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),

@@ -166,7 +166,7 @@ export async function GET() {
             Avalia o onze inicial, os suplentes e o mister de 1 a 10
           </span>
           <span style={{ fontSize: '20px', fontWeight: 800, color: '#ef4444' }}>
-            benficavote.vercel.app
+            benfica-ratings-vax7.vercel.app
           </span>
         </div>
       </div>
