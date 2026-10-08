@@ -1642,7 +1642,7 @@ export default function Home() {
 
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '10px', color: '#71717a' }}>Vota também em</span>
-                <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benficavote.vercel.app</span>
+                <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>benfica-ratings-vax7.vercel.app</span>
               </div>
             </div>
           </div>
