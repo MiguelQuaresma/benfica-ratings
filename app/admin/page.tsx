@@ -16,6 +16,7 @@ interface Match {
   date: string;
   is_home: boolean;
   is_open_for_voting: boolean;
+  is_live?: boolean;
 }
 
 const POSITION_ORDER: Record<string, number> = {
@@ -66,21 +67,19 @@ export default function AdminPage() {
 
   const [tab, setTab] = useState<'manage' | 'set_live' | 'open_voting' | 'schedule'>('manage');
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
-  const [livePendingMatch, setLivePendingMatch] = useState<Match | null>(null);
+  const [liveMatch, setLiveMatch] = useState<Match | null>(null);
   const [upcomingMatch, setUpcomingMatch] = useState<Match | null>(null);
-  const [allUpcomingMatches, setAllUpcomingMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // 1. Meter a Decorrer
-  const [liveChoice, setLiveChoice] = useState<'scheduled' | 'manual'>('scheduled');
   const [liveOpponent, setLiveOpponent] = useState('');
   const [liveCompetition, setLiveCompetition] = useState('Liga Portugal');
   const [liveIsHome, setLiveIsHome] = useState(true);
   const [settingLiveLoading, setSettingLiveLoading] = useState(false);
 
   // 2. Abrir Votação (Apito Final)
-  const [votingMatchId, setVotingMatchId] = useState<string>('');
+  const [targetMatchId, setTargetMatchId] = useState<string>('');
   const [voteOpponent, setVoteOpponent] = useState('');
   const [voteCompetition, setVoteCompetition] = useState('Liga Portugal');
   const [voteIsHome, setVoteIsHome] = useState(true);
@@ -124,9 +123,7 @@ export default function AdminPage() {
   };
 
   const loadCurrentMatches = async () => {
-    const nowIso = new Date().toISOString();
-
-    // Votação aberta
+    // 1. Votação aberta
     const { data: current } = await supabase
       .from('matches')
       .select('*')
@@ -136,35 +133,33 @@ export default function AdminPage() {
 
     setActiveMatch(current as Match | null);
 
-    // Jogo a decorrer (data já passou ou é agora, mas votação ainda não abriu)
-    const { data: livePending } = await supabase
+    // 2. Jogo em direto
+    const { data: live } = await supabase
       .from('matches')
       .select('*')
-      .eq('is_open_for_voting', false)
-      .lte('date', nowIso)
-      .order('date', { ascending: false })
+      .eq('is_live', true)
       .limit(1)
       .maybeSingle();
 
-    setLivePendingMatch(livePending as Match | null);
+    setLiveMatch(live as Match | null);
 
-    // Próximos jogos agendados no futuro
-    const { data: futureList } = await supabase
+    // 3. Próximo jogo agendado
+    const { data: upcoming } = await supabase
       .from('matches')
       .select('*')
       .eq('is_open_for_voting', false)
-      .gt('date', nowIso)
-      .order('date', { ascending: true });
+      .eq('is_live', false)
+      .gte('date', new Date().toISOString())
+      .order('date', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-    if (futureList && futureList.length > 0) {
-      setAllUpcomingMatches(futureList as Match[]);
-      setUpcomingMatch(futureList[0] as Match);
-      setLiveOpponent(futureList[0].opponent);
-      setLiveCompetition(futureList[0].competition);
-      setLiveIsHome(futureList[0].is_home !== false);
-    } else {
-      setAllUpcomingMatches([]);
-      setUpcomingMatch(null);
+    setUpcomingMatch(upcoming as Match | null);
+
+    if (upcoming) {
+      setLiveOpponent(upcoming.opponent);
+      setLiveCompetition(upcoming.competition);
+      setLiveIsHome(upcoming.is_home !== false);
     }
   };
 
@@ -202,29 +197,22 @@ export default function AdminPage() {
     setSelectedIds(next);
   };
 
-  // PASSO 1: COLOCAR JOGO A DECORRER (SEM JOGADORES)
   const handleSetGameLive = async () => {
     setSettingLiveLoading(true);
-    setStatus('A marcar jogo como a decorrer...');
+    setStatus('A colocar jogo a decorrer...');
 
     try {
-      const pastTime = new Date(Date.now() - 5000).toISOString();
-
-      if (liveChoice === 'scheduled' && upcomingMatch) {
-        // Põe a data do agendado para o momento atual -> ativa aviso de jogo a decorrer
+      if (upcomingMatch) {
         const { error } = await supabase
           .from('matches')
-          .update({
-            date: pastTime,
-            is_open_for_voting: false,
-          })
+          .update({ is_live: true })
           .eq('id', upcomingMatch.id);
 
         if (error) throw error;
-        setStatus(`✓ Jogo contra ${upcomingMatch.opponent} marcado como A DECORRER!`);
+        setStatus(`✓ Jogo contra ${upcomingMatch.opponent} está A DECORRER!`);
       } else {
         if (!liveOpponent.trim()) {
-          alert('Indica o adversário.');
+          alert('Indica o nome do adversário.');
           setSettingLiveLoading(false);
           return;
         }
@@ -232,25 +220,54 @@ export default function AdminPage() {
         const { error } = await supabase.from('matches').insert({
           opponent: liveOpponent.trim(),
           competition: liveCompetition.trim(),
-          date: pastTime,
+          date: new Date().toISOString(),
           is_home: liveIsHome,
+          is_live: true,
           is_open_for_voting: false,
         });
 
         if (error) throw error;
-        setStatus(`✓ Jogo contra ${liveOpponent} marcado como A DECORRER!`);
+        setStatus(`✓ Jogo contra ${liveOpponent} colocado A DECORRER!`);
       }
 
       await loadCurrentMatches();
       setTab('manage');
     } catch (err: any) {
-      setStatus('Erro: ' + (err.message || 'Falha ao colocar a decorrer'));
+      setStatus('Erro: ' + (err.message || 'Falha ao atualizar'));
     } finally {
       setSettingLiveLoading(false);
     }
   };
 
-  // PASSO 2: ABRIR VOTAÇÃO NO APITO FINAL (SELECIONA OS JOGADORES QUE JOGARAM)
+  const handleCancelLive = async () => {
+    if (!liveMatch) return;
+    const { error } = await supabase
+      .from('matches')
+      .update({ is_live: false })
+      .eq('id', liveMatch.id);
+
+    if (!error) {
+      setStatus('✓ Jogo a decorrer cancelado.');
+      await loadCurrentMatches();
+    }
+  };
+
+  const prepareOpenVoting = (m?: Match | null) => {
+    const match = m || liveMatch || upcomingMatch;
+    if (match) {
+      setTargetMatchId(match.id);
+      setVoteOpponent(match.opponent);
+      setVoteCompetition(match.competition);
+      setVoteIsHome(match.is_home !== false);
+    } else {
+      setTargetMatchId('');
+      setVoteOpponent('');
+      setVoteCompetition('Liga Portugal');
+      setVoteIsHome(true);
+    }
+    setTab('open_voting');
+  };
+
   const handleOpenVotingNow = async () => {
     if (!voteOpponent.trim()) {
       alert('Indica o adversário.');
@@ -258,35 +275,33 @@ export default function AdminPage() {
     }
 
     if (selectedIds.size === 0) {
-      alert('Seleciona pelo menos um jogador/treinador que jogou.');
+      alert('Seleciona pelo menos um jogador.');
       return;
     }
 
     setVoteLoading(true);
-    setStatus('A abrir votações...');
+    setStatus('A publicar votação...');
 
     try {
-      // Fecha qualquer outro jogo aberto
       await supabase
         .from('matches')
-        .update({ is_open_for_voting: false })
+        .update({ is_open_for_voting: false, is_live: false })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
-      let targetMatchId = votingMatchId;
+      let currentId = targetMatchId;
 
-      if (targetMatchId) {
-        // Ativa o jogo que estava a decorrer
+      if (currentId) {
         const { error } = await supabase
           .from('matches')
           .update({
             is_open_for_voting: true,
+            is_live: false,
             date: new Date().toISOString(),
           })
-          .eq('id', targetMatchId);
+          .eq('id', currentId);
 
         if (error) throw error;
       } else {
-        // Ou cria um novo caso tenha sido manual
         const { data: newMatch, error } = await supabase
           .from('matches')
           .insert({
@@ -294,20 +309,20 @@ export default function AdminPage() {
             competition: voteCompetition.trim(),
             date: new Date().toISOString(),
             is_home: voteIsHome,
+            is_live: false,
             is_open_for_voting: true,
           })
           .select()
           .single();
 
         if (error || !newMatch) throw error;
-        targetMatchId = newMatch.id;
+        currentId = newMatch.id;
       }
 
-      // Limpa convocatórias anteriores por segurança e insere os que jogaram
-      await supabase.from('match_lineups').delete().eq('match_id', targetMatchId);
+      await supabase.from('match_lineups').delete().eq('match_id', currentId);
 
       const lineups = Array.from(selectedIds).map((id) => ({
-        match_id: targetMatchId,
+        match_id: currentId,
         player_id: id,
         is_starter: true,
       }));
@@ -315,11 +330,11 @@ export default function AdminPage() {
       const { error: lineErr } = await supabase.from('match_lineups').insert(lineups);
       if (lineErr) throw lineErr;
 
-      setStatus(`✓ Votação aberta com sucesso para o jogo vs ${voteOpponent}!`);
+      setStatus(`✓ Votação aberta para ${voteOpponent}!`);
       await loadCurrentMatches();
       setTab('manage');
     } catch (err: any) {
-      setStatus('Erro ao abrir votação: ' + (err.message || 'Falha de comunicação'));
+      setStatus('Erro: ' + (err.message || 'Falha ao abrir'));
     } finally {
       setVoteLoading(false);
     }
@@ -335,7 +350,7 @@ export default function AdminPage() {
 
     const { error } = await supabase
       .from('matches')
-      .update({ is_open_for_voting: false })
+      .update({ is_open_for_voting: false, is_live: false })
       .eq('id', activeMatch.id);
 
     setClosingLoading(false);
@@ -368,6 +383,7 @@ export default function AdminPage() {
         .from('matches')
         .select('id')
         .eq('is_open_for_voting', false)
+        .eq('is_live', false)
         .lt('date', nowIso);
 
       if (pastMatches && pastMatches.length > 0) {
@@ -377,7 +393,7 @@ export default function AdminPage() {
         await supabase.from('matches').delete().in('id', pastIds);
       }
 
-      setStatus('✓ Histórico e avaliações limpos com sucesso!');
+      setStatus('✓ Histórico limpo com sucesso!');
       await loadCurrentMatches();
     } catch (err: any) {
       setStatus('Erro ao limpar: ' + (err.message || 'Falha de comunicação'));
@@ -401,6 +417,7 @@ export default function AdminPage() {
       date: new Date(schedDateTime).toISOString(),
       is_home: schedIsHome,
       is_open_for_voting: false,
+      is_live: false,
     });
 
     setSchedLoading(false);
@@ -416,18 +433,48 @@ export default function AdminPage() {
     }
   };
 
-  // Preparar o modal de abrir votação para o jogo que está a decorrer
-  const startOpeningVotingFor = (m: Match) => {
-    setVotingMatchId(m.id);
-    setVoteOpponent(m.opponent);
-    setVoteCompetition(m.competition);
-    setVoteIsHome(m.is_home !== false);
-    setTab('open_voting');
-  };
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center p-4 font-sans">
+        <form
+          onSubmit={handleUnlock}
+          className="w-full max-w-xs bg-zinc-900/90 border border-zinc-800 p-6 rounded-3xl shadow-2xl text-center space-y-4"
+        >
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-red-950/60 border border-red-900/60 flex items-center justify-center text-xl">
+            🔒
+          </div>
+          <div>
+            <h2 className="text-base font-black text-white uppercase tracking-tight">Área Restrita</h2>
+            <p className="text-xs text-zinc-400 mt-0.5">Insere o código de administrador</p>
+          </div>
+
+          <input
+            type="tel"
+            autoComplete="off"
+            placeholder="PIN"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            className="w-full bg-zinc-800 border border-zinc-700 text-center tracking-widest text-lg text-white rounded-xl p-3 outline-none focus:border-red-500"
+            autoFocus
+          />
+
+          {pinError && (
+            <p className="text-[11px] text-red-400 font-bold">Código incorreto. Tenta novamente.</p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow"
+          >
+            Entrar
+          </button>
+        </form>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 p-4 max-w-md mx-auto font-sans pb-24">
-      {/* Topo */}
       <div className="pb-3 border-b border-zinc-800/80 mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-base font-black text-red-600 tracking-tight">ADMIN • BENFICAVOTE</h1>
@@ -450,7 +497,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Abas */}
+      {/* 4 ABAS OBRIGATÓRIAS */}
       <div className="grid grid-cols-4 bg-zinc-900 p-1 rounded-xl border border-zinc-800 mb-5 gap-1 text-center">
         <button
           onClick={() => { setTab('manage'); setStatus(''); }}
@@ -469,7 +516,7 @@ export default function AdminPage() {
           A Decorrer
         </button>
         <button
-          onClick={() => { setTab('open_voting'); setStatus(''); }}
+          onClick={() => { prepareOpenVoting(); setStatus(''); }}
           className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
             tab === 'open_voting' ? 'bg-red-600 text-white shadow' : 'text-zinc-400 hover:text-white'
           }`}
@@ -486,36 +533,41 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* ABA 1: PAINEL DE CONTROLO / ESTADO */}
+      {/* ABA 1: ESTADO */}
       {tab === 'manage' && (
         <div className="space-y-4">
-          {/* Se houver um jogo a decorrer à espera do apito final */}
-          {livePendingMatch && !activeMatch && (
-            <div className="p-4 rounded-2xl bg-amber-950/20 border-2 border-amber-600/70 shadow-lg">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
-                  🔴 Jogo Atualmente a Decorrer no Site
+          {liveMatch && (
+            <div className="p-4 rounded-2xl bg-red-950/20 border-2 border-red-600/80 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-400 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                  🔴 A Decorrer no Site
                 </span>
+                <button
+                  onClick={handleCancelLive}
+                  className="text-[10px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
+                >
+                  Cancelar Direto
+                </button>
               </div>
+
               <h2 className="text-base font-black text-white mt-1">
-                {livePendingMatch.is_home !== false ? `SL Benfica vs ${livePendingMatch.opponent}` : `${livePendingMatch.opponent} vs SL Benfica`}
+                {liveMatch.is_home !== false ? `SL Benfica vs ${liveMatch.opponent}` : `${liveMatch.opponent} vs SL Benfica`}
               </h2>
-              <p className="text-xs text-zinc-400 mt-0.5">{livePendingMatch.competition}</p>
+              <p className="text-xs text-zinc-400 mt-0.5">{liveMatch.competition}</p>
 
               <button
-                onClick={() => startOpeningVotingFor(livePendingMatch)}
+                onClick={() => prepareOpenVoting(liveMatch)}
                 className="w-full mt-3 bg-red-600 hover:bg-red-700 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider shadow transition-all cursor-pointer flex items-center justify-center gap-2"
               >
-                ⚡ Apito Final: Escolher Jogadores e Abrir Voto
+                ⚡ Apito Final: Abrir Votação Deste Jogo
               </button>
             </div>
           )}
 
-          {/* Votação aberta atualmente */}
           <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 shadow-md">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
-              Votação Atual (Adeptos a votar)
+              Votação Aberta (Adeptos a Votar)
             </span>
             {activeMatch ? (
               <div>
@@ -538,12 +590,11 @@ export default function AdminPage() {
               </div>
             ) : (
               <p className="text-xs text-zinc-400 italic mt-1">
-                Nenhuma votação ativa de momento.
+                Nenhuma votação aberta de momento.
               </p>
             )}
           </div>
 
-          {/* Próximo Jogo Agendado no Calendário */}
           <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 shadow-md">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-1">
               Próximo no Calendário
@@ -557,19 +608,18 @@ export default function AdminPage() {
                   {upcomingMatch.competition} • {new Date(upcomingMatch.date).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })}
                 </p>
 
-                <button
-                  onClick={() => {
-                    setLiveChoice('scheduled');
-                    setTab('set_live');
-                  }}
-                  className="w-full mt-3 bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-amber-800/60 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>🔴</span> Marcar Como "Jogo a Decorrer"
-                </button>
+                {!liveMatch && (
+                  <button
+                    onClick={() => setTab('set_live')}
+                    className="w-full mt-3 bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-amber-800/60 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>🔴</span> Marcar Como "Jogo a Decorrer"
+                  </button>
+                )}
               </div>
             ) : (
               <div>
-                <p className="text-xs text-zinc-400 italic mt-1">Sem jogos agendados no futuro.</p>
+                <p className="text-xs text-zinc-400 italic mt-1">Sem jogos agendados.</p>
                 <button
                   onClick={() => setTab('schedule')}
                   className="mt-2 text-xs font-bold text-red-400 underline cursor-pointer"
@@ -580,66 +630,41 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* Zona de Perigo */}
           <div className="p-4 rounded-2xl bg-zinc-950 border border-red-900/40 mt-6 space-y-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-red-500 block">
               Zona de Perigo
             </span>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Remove todas as avaliações passadas e reinicia a classificação da época para recomeçar do zero.
+              Remove todas as avaliações passadas e reinicia a classificação da época.
             </p>
             <button
               type="button"
               onClick={handleClearHistory}
               disabled={clearingLoading}
-              className="w-full mt-2 bg-zinc-900 hover:bg-red-950/80 text-red-400 hover:text-red-300 border border-red-900/60 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full mt-2 bg-zinc-900 hover:bg-red-950/80 text-red-400 hover:text-red-300 border border-red-900/60 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2"
             >
-              <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
               {clearingLoading ? 'A limpar...' : 'Limpar Histórico Completo'}
             </button>
           </div>
         </div>
       )}
 
-      {/* ABA 2: PASSO 1 - MARCAR JOGO A DECORRER */}
+      {/* ABA 2: MARCAR COMO A DECORRER */}
       {tab === 'set_live' && (
         <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl shadow-xl">
           <div>
             <span className="text-[10px] font-black text-red-500 uppercase tracking-widest block mb-1">
-              Passo 1 • Início do Jogo
+              Jogo em Tempo Real
             </span>
             <h2 className="text-sm font-black text-white">Marcar Jogo a Decorrer</h2>
             <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
-              Ativa imediatamente a indicação <strong className="text-red-400">🔴 "Jogo a decorrer — Votação abre no apito final"</strong> na app sem precisar de escolher jogadores agora.
+              Coloca imediatamente a indicação <strong className="text-red-400">🔴 "Jogo a decorrer — Votação abre no apito final"</strong> no site.
             </p>
           </div>
 
-          <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800">
-            <button
-              type="button"
-              onClick={() => setLiveChoice('scheduled')}
-              className={`flex-1 py-1.5 text-[11px] font-black uppercase rounded-lg transition-all ${
-                liveChoice === 'scheduled' ? 'bg-zinc-800 text-white' : 'text-zinc-500'
-              }`}
-            >
-              Usar Agendado
-            </button>
-            <button
-              type="button"
-              onClick={() => setLiveChoice('manual')}
-              className={`flex-1 py-1.5 text-[11px] font-black uppercase rounded-lg transition-all ${
-                liveChoice === 'manual' ? 'bg-zinc-800 text-white' : 'text-zinc-500'
-              }`}
-            >
-              Outro / Manual
-            </button>
-          </div>
-
-          {liveChoice === 'scheduled' && upcomingMatch ? (
+          {upcomingMatch ? (
             <div className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Jogo a colocar em direto:</span>
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Jogo Agendado:</span>
               <p className="text-sm font-black text-white mt-0.5">
                 {upcomingMatch.is_home !== false ? `SL Benfica vs ${upcomingMatch.opponent}` : `${upcomingMatch.opponent} vs SL Benfica`}
               </p>
@@ -706,26 +731,26 @@ export default function AdminPage() {
             disabled={settingLiveLoading}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-zinc-800 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider shadow transition-all cursor-pointer"
           >
-            {settingLiveLoading ? 'A atualizar...' : '🔴 Colocar em "Jogo a Decorrer" no Site'}
+            {settingLiveLoading ? 'A atualizar...' : '🔴 Ativar no Site (Jogo a Decorrer)'}
           </button>
         </div>
       )}
 
-      {/* ABA 3: PASSO 2 - ABRIR VOTAÇÃO NO APITO FINAL (SELECIONA QUEM JOGOU) */}
+      {/* ABA 3: ABRIR VOTAÇÃO */}
       {tab === 'open_voting' && (
         <div className="space-y-4">
           <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-xl">
             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Jogo da Votação:</span>
             <p className="text-sm font-black text-white mt-0.5">
-              {voteIsHome ? `SL Benfica vs ${voteOpponent || upcomingMatch?.opponent || 'Adversário'}` : `${voteOpponent || upcomingMatch?.opponent || 'Adversário'} vs SL Benfica`}
+              {voteIsHome ? `SL Benfica vs ${voteOpponent || 'Adversário'}` : `${voteOpponent || 'Adversário'} vs SL Benfica`}
             </p>
-            <span className="text-[10px] text-red-400 font-bold">{voteCompetition || 'Competição'}</span>
+            <span className="text-[10px] text-red-400 font-bold">{voteCompetition}</span>
           </div>
 
           <div>
             <div className="flex justify-between items-center mb-2">
               <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-                Quem jogou? (Onze + Suplentes + Mister)
+                Quem jogou? (Clica para escolher)
               </span>
               <span className="text-[10px] font-black text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-900/50">
                 {selectedIds.size} selecionados
