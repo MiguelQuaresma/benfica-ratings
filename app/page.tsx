@@ -240,6 +240,7 @@ export default function Home() {
 
   useEffect(() => {
     async function loadData() {
+      // 1. Procurar jogo com votação aberta
       const { data: current } = await supabase
         .from('matches')
         .select('*')
@@ -301,14 +302,32 @@ export default function Home() {
         setView('history');
       }
 
-      // Query corrigida: apanha jogos com votação fechada (tanto agendados no futuro como os marcados a decorrer)
+      // 2. Procurar o jogo que está a decorrer ou o próximo agendado
+      const nowIso = new Date().toISOString();
+
+      // Primeiro verifica se há um jogo a decorrer (data <= agora e votação ainda fechada)
+      const { data: liveMatches } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('is_open_for_voting', false)
+        .lte('date', nowIso)
+        .order('date', { ascending: false })
+        .limit(1);
+
+      // Depois procura os jogos agendados no futuro
       const { data: upcomingList } = await supabase
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
+        .gt('date', nowIso)
         .order('date', { ascending: true });
 
-      if (upcomingList && upcomingList.length > 0) {
+      if (liveMatches && liveMatches.length > 0) {
+        // Encontrou um jogo marcado como A DECORRER!
+        setUpcomingMatch(liveMatches[0] as Match);
+        setAllUpcomingMatches((upcomingList as Match[]) || []);
+      } else if (upcomingList && upcomingList.length > 0) {
+        // Encontrou jogos futuros
         setAllUpcomingMatches(upcomingList as Match[]);
         setUpcomingMatch(upcomingList[0] as Match);
       } else {
@@ -637,8 +656,8 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
-  // Deteta se o jogo já começou ou se o timer bateu em zeros
-  const isTimerFinished = !activeMatch && upcomingMatch && (
+  // DETETA SE O JOGO ESTÁ A DECORRER
+  const isGameLiveNow = !activeMatch && upcomingMatch && (
     new Date(upcomingMatch.date).getTime() <= Date.now() ||
     (timeLeft.d === 0 && timeLeft.h === 0 && timeLeft.m === 0 && timeLeft.s === 0)
   );
@@ -672,7 +691,12 @@ export default function Home() {
                 : 'text-red-400 bg-red-950/40 border border-red-800/40'
             }`}>
               <span className={`w-1.5 h-1.5 rounded-full ${isTestMatch ? 'bg-amber-400' : 'bg-red-500'} animate-pulse`}></span>
-              {isTestMatch ? 'Modo de Teste' : 'A decorrer'}
+              {isTestMatch ? 'Modo de Teste' : 'Votação Aberta'}
+            </span>
+          ) : isGameLiveNow ? (
+            <span className="inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full text-red-400 bg-red-950/40 border border-red-800/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+              Jogo a Decorrer
             </span>
           ) : (
             <span className="text-[10px] md:text-xs font-medium text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">
@@ -683,20 +707,27 @@ export default function Home() {
       </header>
 
       <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-4">
+        {/* BANNER DO TOPO: JOGO A DECORRER OU PRÓXIMO AGENDADO */}
         {upcomingMatch && !activeMatch && (
-          <div className="mb-4 p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
-            <span className="text-[10px] md:text-xs font-bold tracking-wider text-zinc-400 uppercase">
-              {isTimerFinished ? 'Encontro em Direto' : 'Próximo Encontro'} • {upcomingMatch.is_home !== false ? 'Casa' : 'Fora'}
+          <div className={`mb-4 p-4 md:p-6 rounded-2xl border text-center transition-all ${
+            isGameLiveNow
+              ? 'bg-[#151214] border-red-900/60 shadow-[0_0_25px_rgba(239,68,68,0.15)]'
+              : 'bg-[#121215] border-zinc-800/80'
+          }`}>
+            <span className={`text-[10px] md:text-xs font-bold tracking-wider uppercase ${
+              isGameLiveNow ? 'text-red-400' : 'text-zinc-400'
+            }`}>
+              {isGameLiveNow ? '🔴 Em Direto' : 'Próximo Encontro'} • {upcomingMatch.is_home !== false ? 'Casa' : 'Fora'}
             </span>
             <h2 className="text-base md:text-xl font-bold text-white mt-1">
               {formatMatchTitle(upcomingMatch)}
             </h2>
             <p className="text-[11px] md:text-xs text-zinc-500">{upcomingMatch.competition}</p>
 
-            {isTimerFinished ? (
-              <div className="mt-3 inline-flex items-center gap-2 bg-red-950/50 border border-red-800/60 px-4 py-2 rounded-full text-xs font-black text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+            {isGameLiveNow ? (
+              <div className="mt-4 p-3 bg-red-950/40 border border-red-800/60 rounded-xl text-xs font-bold text-red-400 flex items-center justify-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
-                🔴 Jogo a decorrer — Votação abre no apito final
+                <span>🔴 Jogo a decorrer — Votação abre no apito final</span>
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-2 mt-3 max-w-xs md:max-w-sm mx-auto">
