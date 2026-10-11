@@ -398,7 +398,6 @@ export default function Home() {
   async function loadHistoryAndMatrix() {
     const nowIso = new Date().toISOString();
 
-    // Apenas jogos finalizados (não abertos e que não estejam em direto)
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -654,7 +653,6 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
-  // DETETA SE O JOGO ESTÁ A DECORRER (EXPLÍCITO OU POR TIMER ZERADO)
   const isGameLiveNow = !activeMatch && upcomingMatch && (
     upcomingMatch.is_live === true ||
     (timeLeft.d === 0 && timeLeft.h === 0 && timeLeft.m === 0 && timeLeft.s === 0 && new Date(upcomingMatch.date).getTime() <= Date.now())
@@ -705,7 +703,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-4">
-        {/* BANNER DO TOPO: JOGO A DECORRER OU PRÓXIMO AGENDADO */}
+        {/* BANNER DO TOPO */}
         {upcomingMatch && !activeMatch && (
           <div className={`mb-4 p-4 md:p-6 rounded-2xl border text-center transition-all ${
             isGameLiveNow
@@ -1575,9 +1573,10 @@ export default function Home() {
         </aside>
       )}
 
-      {/* CARTÕES DE PARTILHA OCULTOS */}
+      {/* CARTÕES DE PARTILHA OCULTOS COM FOTO DOS JOGADORES NA GRELHA */}
       {activeMatch && (
         <>
+          {/* CARTÃO 1: OS MEUS VOTOS */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={userCardRef}
@@ -1658,9 +1657,12 @@ export default function Home() {
                 </div>
               )}
 
+              {/* GRELHA COM FOTO DE CADA JOGADOR */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px', flex: 1 }}>
                 {userCardGridPlayers.map((p) => {
                   const score = ratings[p.id];
+                  const initials = p.name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
+
                   return (
                     <div
                       key={p.id}
@@ -1668,16 +1670,51 @@ export default function Home() {
                         backgroundColor: '#121215',
                         border: '1px solid #27272a',
                         borderRadius: '10px',
-                        padding: '7px 10px',
+                        padding: '6px 10px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                       }}
                     >
-                      <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
-                        {p.name}
-                      </span>
-                      <span style={{ fontSize: '13px', fontWeight: 900, color: score ? '#ef4444' : '#52525b' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        {p.photo_url ? (
+                          <img
+                            src={p.photo_url}
+                            alt={p.name}
+                            crossOrigin="anonymous"
+                            style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '7px',
+                              objectFit: 'cover',
+                              backgroundColor: '#27272a',
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '7px',
+                              backgroundColor: '#27272a',
+                              color: '#a1a1aa',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '9px',
+                              fontWeight: 800,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {initials}
+                          </div>
+                        )}
+                        <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '125px' }}>
+                          {p.name}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: score ? '#ef4444' : '#52525b', flexShrink: 0, marginLeft: '6px' }}>
                         {score || '—'}
                       </span>
                     </div>
@@ -1692,6 +1729,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* CARTÃO 2: NOTAS DA COMUNIDADE */}
           <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
             <div
               ref={communityCardRef}
@@ -1772,26 +1810,68 @@ export default function Home() {
                 </div>
               )}
 
+              {/* GRELHA COM FOTO DE CADA JOGADOR (NOTAS DA COMUNIDADE) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '7px', flex: 1 }}>
-                {communityCardGridStats.map((s) => (
-                  <div
-                    key={s.player_id}
-                    style={{
-                      backgroundColor: '#121215',
-                      border: '1px solid #27272a',
-                      borderRadius: '10px',
-                      padding: '7px 10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
-                      {s.player_name}
-                    </span>
-                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#ef4444' }}>{s.avg_score}</span>
-                  </div>
-                ))}
+                {communityCardGridStats.map((s) => {
+                  const initials = s.player_name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
+
+                  return (
+                    <div
+                      key={s.player_id}
+                      style={{
+                        backgroundColor: '#121215',
+                        border: '1px solid #27272a',
+                        borderRadius: '10px',
+                        padding: '6px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        {s.photo_url ? (
+                          <img
+                            src={s.photo_url}
+                            alt={s.player_name}
+                            crossOrigin="anonymous"
+                            style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '7px',
+                              objectFit: 'cover',
+                              backgroundColor: '#27272a',
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '7px',
+                              backgroundColor: '#27272a',
+                              color: '#a1a1aa',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '9px',
+                              fontWeight: 800,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {initials}
+                          </div>
+                        )}
+                        <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '125px' }}>
+                          {s.player_name}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#ef4444', flexShrink: 0, marginLeft: '6px' }}>
+                        {s.avg_score}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
               <div style={{ borderTop: '1px solid #27272a', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
