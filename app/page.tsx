@@ -301,12 +301,11 @@ export default function Home() {
         setView('history');
       }
 
-      const nowIso = new Date().toISOString();
+      // Query corrigida: apanha jogos com votação fechada (tanto agendados no futuro como os marcados a decorrer)
       const { data: upcomingList } = await supabase
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
-        .gte('date', nowIso)
         .order('date', { ascending: true });
 
       if (upcomingList && upcomingList.length > 0) {
@@ -529,7 +528,7 @@ export default function Home() {
         await navigator.share({
           files: [file],
           title,
-          text: `#SLBenfica As minhas notas no jogo do SL Benfica! Vota também aqui 👉  `,
+          text: `As minhas notas no jogo do SL Benfica! Vota também aqui 👉 https://benfica-ratings-vax7.vercel.app/ #SLBenfica`,
           url: 'https://benfica-ratings-vax7.vercel.app/',
         });
       } else {
@@ -638,7 +637,11 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
-  const isTimerFinished = timeLeft.d === 0 && timeLeft.h === 0 && timeLeft.m === 0 && timeLeft.s === 0;
+  // Deteta se o jogo já começou ou se o timer bateu em zeros
+  const isTimerFinished = !activeMatch && upcomingMatch && (
+    new Date(upcomingMatch.date).getTime() <= Date.now() ||
+    (timeLeft.d === 0 && timeLeft.h === 0 && timeLeft.m === 0 && timeLeft.s === 0)
+  );
 
   const userCardGridPlayers = players.filter((p) => {
     if (p.position === 'TREINADOR') return false;
@@ -680,10 +683,10 @@ export default function Home() {
       </header>
 
       <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto px-4 pt-4">
-        {upcomingMatch && (
+        {upcomingMatch && !activeMatch && (
           <div className="mb-4 p-4 md:p-6 rounded-2xl bg-[#121215] border border-zinc-800/80 text-center">
             <span className="text-[10px] md:text-xs font-bold tracking-wider text-zinc-400 uppercase">
-              Próximo Encontro • {upcomingMatch.is_home !== false ? 'Casa' : 'Fora'}
+              {isTimerFinished ? 'Encontro em Direto' : 'Próximo Encontro'} • {upcomingMatch.is_home !== false ? 'Casa' : 'Fora'}
             </span>
             <h2 className="text-base md:text-xl font-bold text-white mt-1">
               {formatMatchTitle(upcomingMatch)}
@@ -691,8 +694,8 @@ export default function Home() {
             <p className="text-[11px] md:text-xs text-zinc-500">{upcomingMatch.competition}</p>
 
             {isTimerFinished ? (
-              <div className="mt-3 inline-flex items-center gap-2 bg-red-950/40 border border-red-800/50 px-3.5 py-1.5 rounded-full text-xs font-bold text-red-400">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+              <div className="mt-3 inline-flex items-center gap-2 bg-red-950/50 border border-red-800/60 px-4 py-2 rounded-full text-xs font-black text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
                 🔴 Jogo a decorrer — Votação abre no apito final
               </div>
             ) : (
