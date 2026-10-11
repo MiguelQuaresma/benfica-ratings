@@ -1647,7 +1647,7 @@ export default function Home() {
                       style={{ width: '36px', height: '36px', borderRadius: '9px', objectFit: 'cover', border: '1px solid #d97706' }}
                     />
                     <div>
-                      <span style={{ fontSize: '8px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👔 Treinador / Mister</span>
+                      <span style={{ fontSize: '8px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👔 Treinador </span>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#fef3c7' }}>{userCoachPlayer.name}</div>
                     </div>
                   </div>
@@ -1800,7 +1800,7 @@ export default function Home() {
                       style={{ width: '36px', height: '36px', borderRadius: '9px', objectFit: 'cover', border: '1px solid #d97706' }}
                     />
                     <div>
-                      <span style={{ fontSize: '8px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👔 Treinador / Mister</span>
+                      <span style={{ fontSize: '8px', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👔 Treinador</span>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#fef3c7' }}>{communityCoachStat.player_name}</div>
                     </div>
                   </div>
