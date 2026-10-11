@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 const APP_URL = 'https://benfica-ratings-vax7.vercel.app';
+const BENFICA_LOGO_URL = 'https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp';
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
@@ -15,11 +16,20 @@ export const metadata: Metadata = {
     siteName: 'BenficaVote',
     title: 'BenficaVote • Avaliação dos Adeptos',
     description: 'Dá notas aos jogadores e ao treinador do SL Benfica após cada jogo.',
+    images: [
+      {
+        url: BENFICA_LOGO_URL,
+        width: 512,
+        height: 512,
+        alt: 'BenficaVote Logo',
+      },
+    ],
   },
   twitter: {
-    card: 'summary_large_image',
+    card: 'summary',
     title: 'BenficaVote • Avaliação dos Adeptos',
     description: 'Dá notas aos jogadores e ao treinador do SL Benfica após cada jogo.',
+    images: [BENFICA_LOGO_URL],
   },
   appleWebApp: {
     capable: true,
