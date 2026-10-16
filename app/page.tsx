@@ -274,7 +274,8 @@ export default function Home() {
         }
 
         const voterToken = typeof window !== 'undefined' ? localStorage.getItem('voter_token') : null;
-        let userAlreadyVoted = false;
+        const localVoted = typeof window !== 'undefined' ? localStorage.getItem(`voted_match_${matchData.id}`) === 'true' : false;
+        let userAlreadyVoted = localVoted;
 
         if (voterToken) {
           const { data: userRatings } = await supabase
@@ -290,12 +291,13 @@ export default function Home() {
               userScores[r.player_id] = r.score;
             });
             setRatings(userScores);
-            setHasVoted(true);
-            setView('results');
           }
         }
 
-        if (!userAlreadyVoted) {
+        if (userAlreadyVoted) {
+          setHasVoted(true);
+          setView('results');
+        } else {
           setView('vote');
         }
 
@@ -314,7 +316,6 @@ export default function Home() {
         .maybeSingle();
 
       // 3. Procurar o jogo mais recente agendado ou com timer decorrido mas ainda não arquivado
-      // Qualquer jogo com is_open_for_voting = false que não foi fechado manualmente
       const { data: upcomingList } = await supabase
         .from('matches')
         .select('*')
@@ -326,7 +327,6 @@ export default function Home() {
         const filteredUpcoming = (upcomingList as Match[] || []).filter((m) => m.id !== live.id && new Date(m.date).getTime() > Date.now());
         setAllUpcomingMatches(filteredUpcoming);
       } else if (upcomingList && upcomingList.length > 0) {
-        // Encontra o primeiro jogo que ou tem data futura ou que ainda não foi votado
         const target = upcomingList.find((m: Match) => new Date(m.date).getTime() >= Date.now() - (1000 * 60 * 60 * 24 * 7)) || upcomingList[upcomingList.length - 1];
         setUpcomingMatch(target as Match);
         setAllUpcomingMatches((upcomingList as Match[]).filter((m) => new Date(m.date).getTime() > Date.now()));
@@ -400,8 +400,6 @@ export default function Home() {
   }
 
   async function loadHistoryAndMatrix() {
-    // Apenas jogos que tenham sido finalizados (is_open_for_voting = false e is_live = false)
-    // e cuja data seja estritamente anterior ao jogo atual em curso
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -410,7 +408,6 @@ export default function Home() {
       .order('date', { ascending: true })
       .limit(30);
 
-    // Filtra para garantir que o jogo atual em direto/espera não entra no histórico
     const validPastMatches = (matches as Match[] || []).filter((m) => {
       if (upcomingMatch && m.id === upcomingMatch.id) return false;
       if (activeMatch && m.id === activeMatch.id) return false;
@@ -526,6 +523,7 @@ export default function Home() {
         throw new Error('Falha no registo do voto');
       }
 
+      localStorage.setItem(`voted_match_${activeMatch.id}`, 'true');
       setHasVoted(true);
       await loadStats(activeMatch.id);
       setView('results');
@@ -662,8 +660,6 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
-  // O jogo está a decorrer se o timer chegou a zero ou foi marcado como is_live
-  // e permanece assim INDEFINIDAMENTE até haver uma votação aberta
   const isGameLiveNow = !activeMatch && upcomingMatch && (
     upcomingMatch.is_live === true ||
     new Date(upcomingMatch.date).getTime() <= Date.now()
