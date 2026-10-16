@@ -1,13 +1,21 @@
-// app/opengraph-image/route.tsx
+// app/opengraph-image.tsx
 import { ImageResponse } from 'next/og';
 import { createClient } from '@supabase/supabase-js';
 
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
+
+export const alt = 'BenficaVote • Avaliação dos Adeptos';
+export const size = {
+  width: 1200,
+  height: 630,
+};
+export const contentType = 'image/png';
 
 const BENFICA_LOGO_URL =
   'https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp';
 
-export async function GET() {
+export default async function Image() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -172,8 +180,7 @@ export async function GET() {
       </div>
     ),
     {
-      width: 1200,
-      height: 630,
+      ...size,
     }
   );
 }
