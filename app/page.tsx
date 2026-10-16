@@ -246,6 +246,7 @@ export default function Home() {
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', true)
+        .order('date', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -303,29 +304,32 @@ export default function Home() {
         setView('history');
       }
 
-      // 2. Verificar se há jogo em direto (is_live = true)
+      // 2. Verificar jogo em direto explícito (is_live = true)
       const { data: live } = await supabase
         .from('matches')
         .select('*')
         .eq('is_live', true)
+        .eq('is_open_for_voting', false)
         .limit(1)
         .maybeSingle();
 
-      // 3. Procurar próximos jogos agendados no futuro
+      // 3. Procurar o jogo mais recente agendado ou com timer decorrido mas ainda não arquivado
+      // Qualquer jogo com is_open_for_voting = false que não foi fechado manualmente
       const { data: upcomingList } = await supabase
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
-        .eq('is_live', false)
-        .gte('date', new Date().toISOString())
         .order('date', { ascending: true });
 
       if (live) {
         setUpcomingMatch(live as Match);
-        setAllUpcomingMatches((upcomingList as Match[]) || []);
+        const filteredUpcoming = (upcomingList as Match[] || []).filter((m) => m.id !== live.id && new Date(m.date).getTime() > Date.now());
+        setAllUpcomingMatches(filteredUpcoming);
       } else if (upcomingList && upcomingList.length > 0) {
-        setAllUpcomingMatches(upcomingList as Match[]);
-        setUpcomingMatch(upcomingList[0] as Match);
+        // Encontra o primeiro jogo que ou tem data futura ou que ainda não foi votado
+        const target = upcomingList.find((m: Match) => new Date(m.date).getTime() >= Date.now() - (1000 * 60 * 60 * 24 * 7)) || upcomingList[upcomingList.length - 1];
+        setUpcomingMatch(target as Match);
+        setAllUpcomingMatches((upcomingList as Match[]).filter((m) => new Date(m.date).getTime() > Date.now()));
       } else {
         setAllUpcomingMatches([]);
         setUpcomingMatch(null);
@@ -396,18 +400,23 @@ export default function Home() {
   }
 
   async function loadHistoryAndMatrix() {
-    const nowIso = new Date().toISOString();
-
+    // Apenas jogos que tenham sido finalizados (is_open_for_voting = false e is_live = false)
+    // e cuja data seja estritamente anterior ao jogo atual em curso
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
       .eq('is_open_for_voting', false)
       .eq('is_live', false)
-      .lt('date', nowIso)
       .order('date', { ascending: true })
-      .limit(20);
+      .limit(30);
 
-    const validPastMatches = (matches as Match[]) || [];
+    // Filtra para garantir que o jogo atual em direto/espera não entra no histórico
+    const validPastMatches = (matches as Match[] || []).filter((m) => {
+      if (upcomingMatch && m.id === upcomingMatch.id) return false;
+      if (activeMatch && m.id === activeMatch.id) return false;
+      return true;
+    });
+
     setPastMatches(validPastMatches);
     const validMatchIds = new Set(validPastMatches.map((m) => m.id));
 
@@ -653,9 +662,11 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
+  // O jogo está a decorrer se o timer chegou a zero ou foi marcado como is_live
+  // e permanece assim INDEFINIDAMENTE até haver uma votação aberta
   const isGameLiveNow = !activeMatch && upcomingMatch && (
     upcomingMatch.is_live === true ||
-    (timeLeft.d === 0 && timeLeft.h === 0 && timeLeft.m === 0 && timeLeft.s === 0 && new Date(upcomingMatch.date).getTime() <= Date.now())
+    new Date(upcomingMatch.date).getTime() <= Date.now()
   );
 
   const userCardGridPlayers = players.filter((p) => {
