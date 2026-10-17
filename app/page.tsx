@@ -306,7 +306,7 @@ export default function Home() {
         setView('history');
       }
 
-      // 2. Verificar jogo em direto explícito (is_live = true)
+      // 2. Verificar jogo marcado explicitamente como em direto (is_live = true)
       const { data: live } = await supabase
         .from('matches')
         .select('*')
@@ -315,24 +315,24 @@ export default function Home() {
         .limit(1)
         .maybeSingle();
 
-      // 3. Procurar o jogo mais recente agendado ou com timer decorrido mas ainda não arquivado
+      // 3. Procurar jogos futuros (data >= agora)
+      const nowIso = new Date().toISOString();
       const { data: upcomingList } = await supabase
         .from('matches')
         .select('*')
         .eq('is_open_for_voting', false)
+        .gte('date', nowIso)
         .order('date', { ascending: true });
 
       if (live) {
         setUpcomingMatch(live as Match);
-        const filteredUpcoming = (upcomingList as Match[] || []).filter((m) => m.id !== live.id && new Date(m.date).getTime() > Date.now());
-        setAllUpcomingMatches(filteredUpcoming);
+        setAllUpcomingMatches((upcomingList as Match[]) || []);
       } else if (upcomingList && upcomingList.length > 0) {
-        const target = upcomingList.find((m: Match) => new Date(m.date).getTime() >= Date.now() - (1000 * 60 * 60 * 24 * 7)) || upcomingList[upcomingList.length - 1];
-        setUpcomingMatch(target as Match);
-        setAllUpcomingMatches((upcomingList as Match[]).filter((m) => new Date(m.date).getTime() > Date.now()));
+        setUpcomingMatch(upcomingList[0] as Match);
+        setAllUpcomingMatches(upcomingList as Match[]);
       } else {
-        setAllUpcomingMatches([]);
         setUpcomingMatch(null);
+        setAllUpcomingMatches([]);
       }
 
       loadHistoryAndMatrix();
@@ -409,7 +409,6 @@ export default function Home() {
       .limit(30);
 
     const validPastMatches = (matches as Match[] || []).filter((m) => {
-      if (upcomingMatch && m.id === upcomingMatch.id) return false;
       if (activeMatch && m.id === activeMatch.id) return false;
       return true;
     });
@@ -660,9 +659,10 @@ export default function Home() {
   const maxHistogramCount = countsValues.length > 0 ? Math.max(...countsValues, 1) : 1;
   const totalHistogramVotes = countsValues.reduce((a, b) => a + b, 0);
 
+  // Apenas surge "Em Direto" se o jogo for marcado explicitamente com is_live ou se for um jogo futuro cujo horário tenha chegado
   const isGameLiveNow = !activeMatch && upcomingMatch && (
     upcomingMatch.is_live === true ||
-    new Date(upcomingMatch.date).getTime() <= Date.now()
+    (new Date(upcomingMatch.date).getTime() <= Date.now() && upcomingMatch.is_open_for_voting === false)
   );
 
   const userCardGridPlayers = players.filter((p) => {
