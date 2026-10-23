@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { toBlob } from 'html-to-image';
 import { supabase } from '@/lib/supabase';
+import NotificationBell from '@/components/NotificationBell';
 
 interface Match {
   id: string;
@@ -49,40 +50,55 @@ const POSITION_ORDER: Record<string, number> = {
 
 const BENFICA_LOGO_URL = "https://dctsqmibhhrtormygkpg.supabase.co/storage/v1/object/public/players/slb-logo.webp";
 
+// Escala de cores das notas, em 5 degraus de 2 pontos (vale para votos e médias)
 function getScoreTheme(score: number) {
-  if (score >= 8) {
+  // 9 – 10: excelente
+  if (score >= 9) {
     return {
-      bg: 'bg-emerald-500/20',
-      border: 'border-emerald-500/80',
-      text: 'text-emerald-400',
-      glow: 'shadow-[0_0_15px_rgba(16,185,129,0.35)]',
-      matrixBg: 'bg-emerald-950/80 border-emerald-600/70 text-emerald-400',
+      bg: 'bg-emerald-500/30',
+      border: 'border-emerald-400',
+      text: 'text-emerald-300',
+      glow: 'shadow-[0_0_16px_rgba(52,211,153,0.45)]',
+      matrixBg: 'bg-emerald-900/80 border-emerald-400/80 text-emerald-300',
     };
   }
-  if (score >= 6) {
+  // 7 – 8: bom
+  if (score >= 7) {
     return {
-      bg: 'bg-teal-500/20',
-      border: 'border-teal-500/80',
-      text: 'text-teal-400',
-      glow: 'shadow-[0_0_12px_rgba(20,184,166,0.3)]',
-      matrixBg: 'bg-teal-950/80 border-teal-600/70 text-teal-400',
+      bg: 'bg-green-500/15',
+      border: 'border-green-600/80',
+      text: 'text-green-400',
+      glow: 'shadow-[0_0_12px_rgba(34,197,94,0.3)]',
+      matrixBg: 'bg-green-950/80 border-green-700/70 text-green-400',
     };
   }
+  // 5 – 6: razoável
   if (score >= 5) {
     return {
-      bg: 'bg-amber-500/20',
-      border: 'border-amber-500/80',
-      text: 'text-amber-400',
-      glow: 'shadow-[0_0_12px_rgba(245,158,11,0.25)]',
-      matrixBg: 'bg-amber-950/80 border-amber-600/70 text-amber-400',
+      bg: 'bg-yellow-500/15',
+      border: 'border-yellow-500/80',
+      text: 'text-yellow-400',
+      glow: 'shadow-[0_0_12px_rgba(234,179,8,0.25)]',
+      matrixBg: 'bg-yellow-950/80 border-yellow-600/70 text-yellow-400',
     };
   }
+  // 3 – 4: fraco
+  if (score >= 3) {
+    return {
+      bg: 'bg-orange-500/20',
+      border: 'border-orange-500/80',
+      text: 'text-orange-400',
+      glow: 'shadow-[0_0_12px_rgba(249,115,22,0.25)]',
+      matrixBg: 'bg-orange-950/80 border-orange-600/70 text-orange-400',
+    };
+  }
+  // 1 – 2: muito mau (vermelho escuro)
   return {
-    bg: 'bg-red-500/20',
-    border: 'border-red-600/80',
-    text: 'text-red-400',
-    glow: 'shadow-[0_0_12px_rgba(239,68,68,0.25)]',
-    matrixBg: 'bg-rose-950/80 border-rose-600/70 text-rose-400',
+    bg: 'bg-red-900/50',
+    border: 'border-red-800',
+    text: 'text-red-500',
+    glow: 'shadow-[0_0_12px_rgba(153,27,27,0.45)]',
+    matrixBg: 'bg-red-950 border-red-800 text-red-500',
   };
 }
 
@@ -687,6 +703,7 @@ export default function Home() {
               BENFICA<span className="text-red-600">VOTE</span>
             </h1>
           </div>
+          <div className="flex items-center gap-2">
           {activeMatch ? (
             <span className={`inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full ${
               isTestMatch
@@ -706,6 +723,8 @@ export default function Home() {
               Arquivo
             </span>
           )}
+            <NotificationBell />
+          </div>
         </div>
       </header>
 
@@ -1489,20 +1508,24 @@ export default function Home() {
 
                 <div className="p-3 bg-zinc-900/60 border-t border-zinc-800 flex items-center justify-around text-[9px] md:text-xs font-bold text-zinc-400">
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded bg-emerald-500"></span>
-                    <span>≥ 8.0</span>
+                    <span className="w-2.5 h-2.5 rounded bg-emerald-400"></span>
+                    <span>9 – 10</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded bg-teal-500"></span>
-                    <span>6.0 - 7.9</span>
+                    <span className="w-2.5 h-2.5 rounded bg-green-600"></span>
+                    <span>7 – 8.9</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded bg-amber-500"></span>
-                    <span>5.0 - 5.9</span>
+                    <span className="w-2.5 h-2.5 rounded bg-yellow-500"></span>
+                    <span>5 – 6.9</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded bg-rose-500"></span>
-                    <span>&lt; 5.0</span>
+                    <span className="w-2.5 h-2.5 rounded bg-orange-500"></span>
+                    <span>3 – 4.9</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded bg-red-800"></span>
+                    <span>1 – 2.9</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-zinc-500">
                     <span className="w-2.5 h-2.5 rounded bg-zinc-800 text-center leading-none">—</span>

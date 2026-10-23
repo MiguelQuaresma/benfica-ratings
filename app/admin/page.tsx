@@ -142,7 +142,34 @@ export default function AdminPage() {
       .limit(1)
       .maybeSingle();
 
-    setLiveMatch(live as Match | null);
+    let currentLive = live as Match | null;
+
+    // 2b. Jogo agendado cuja hora já chegou: o site mostra-o como "a decorrer"
+    // mesmo sem is_live, por isso o admin também o deve mostrar aqui
+    if (!currentLive && !current) {
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const { data: started } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('is_open_for_voting', false)
+        .eq('is_live', false)
+        .gte('date', threeHoursAgo)
+        .lte('date', new Date().toISOString())
+        .order('date', { ascending: false });
+
+      const candidates = (started as Match[] | null) || [];
+      if (candidates.length > 0) {
+        // Exclui jogos que já tiveram votação (têm ficha de jogo registada)
+        const { data: withLineups } = await supabase
+          .from('match_lineups')
+          .select('match_id')
+          .in('match_id', candidates.map((c) => c.id));
+        const played = new Set((withLineups || []).map((l: any) => l.match_id));
+        currentLive = candidates.find((c) => !played.has(c.id)) || null;
+      }
+    }
+
+    setLiveMatch(currentLive);
 
     // 3. Próximo jogo agendado futuro
     const { data: upcoming } = await supabase
@@ -192,6 +219,23 @@ export default function AdminPage() {
     setSelectedIds(next);
   };
 
+  // NOTIFICAÇÕES PUSH: avisa os adeptos subscritos (o servidor confirma o estado e evita repetidos)
+  const notifyFans = async (matchId: string, type: 'live' | 'voting') => {
+    try {
+      const res = await fetch('/api/push/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId, type }),
+      });
+      const data = await res.json();
+      if (!res.ok) return ` (notificações: ${data.error || 'falhou'})`;
+      if (data.skipped) return ` (notificações: ${data.skipped.toLowerCase()})`;
+      return ` 🔔 ${data.sent} adepto(s) notificado(s).`;
+    } catch {
+      return ' (notificações: falha de rede)';
+    }
+  };
+
   // PASSO 1: CRIAR OU MARCAR JOGO A DECORRER (DO ZERO OU AGENDADO)
   const handleSetGameLive = async () => {
     setSettingLiveLoading(true);
@@ -209,7 +253,8 @@ export default function AdminPage() {
           .eq('id', upcomingMatch.id);
 
         if (error) throw error;
-        setStatus(`✓ Jogo contra ${upcomingMatch.opponent} está A DECORRER!`);
+        const pushMsg = await notifyFans(upcomingMatch.id, 'live');
+        setStatus(`✓ Jogo contra ${upcomingMatch.opponent} está A DECORRER!${pushMsg}`);
       } else {
         // Cria um jogo NOVO do zero com is_live = true
         if (!liveOpponent.trim()) {
@@ -218,17 +263,22 @@ export default function AdminPage() {
           return;
         }
 
-        const { error } = await supabase.from('matches').insert({
-          opponent: liveOpponent.trim(),
-          competition: liveCompetition.trim(),
-          date: new Date().toISOString(),
-          is_home: liveIsHome,
-          is_live: true,
-          is_open_for_voting: false,
-        });
+        const { data: newLive, error } = await supabase
+          .from('matches')
+          .insert({
+            opponent: liveOpponent.trim(),
+            competition: liveCompetition.trim(),
+            date: new Date().toISOString(),
+            is_home: liveIsHome,
+            is_live: true,
+            is_open_for_voting: false,
+          })
+          .select()
+          .single();
 
-        if (error) throw error;
-        setStatus(`✓ Jogo contra ${liveOpponent.trim()} criado e marcado A DECORRER!`);
+        if (error || !newLive) throw error;
+        const pushMsg = await notifyFans(newLive.id, 'live');
+        setStatus(`✓ Jogo contra ${liveOpponent.trim()} criado e marcado A DECORRER!${pushMsg}`);
       }
 
       await loadCurrentMatches();
@@ -338,7 +388,8 @@ export default function AdminPage() {
       const { error: lineErr } = await supabase.from('match_lineups').insert(lineups);
       if (lineErr) throw lineErr;
 
-      setStatus(`✓ Votação aberta com sucesso para o jogo vs ${voteOpponent}!`);
+      const pushMsg = await notifyFans(currentId, 'voting');
+      setStatus(`✓ Votação aberta com sucesso para o jogo vs ${voteOpponent}!${pushMsg}`);
       await loadCurrentMatches();
       setTab('manage');
     } catch (err: any) {
@@ -553,12 +604,16 @@ export default function AdminPage() {
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
                   🔴 Jogo a Decorrer no Site
                 </span>
-                <button
-                  onClick={handleCancelLive}
-                  className="text-[10px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
-                >
-                  Cancelar Direto
-                </button>
+                {liveMatch.is_live ? (
+                  <button
+                    onClick={handleCancelLive}
+                    className="text-[10px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
+                  >
+                    Cancelar Direto
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-zinc-500">Começou à hora marcada</span>
+                )}
               </div>
 
               <h2 className="text-base font-black text-white mt-1">
