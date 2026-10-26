@@ -340,8 +340,38 @@ export default function Home() {
         .gte('date', nowIso)
         .order('date', { ascending: true });
 
+      // 3b. Jogo agendado cuja hora já chegou (começou sozinho pelo contador):
+      // continua "a decorrer" até abrir a votação, mesmo para quem abre a página depois
+      let startedMatch: Match | null = null;
+      if (!live && !current) {
+        const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+        const { data: started } = await supabase
+          .from('matches')
+          .select('*')
+          .eq('is_open_for_voting', false)
+          .eq('is_live', false)
+          .gte('date', threeHoursAgo)
+          .lte('date', nowIso)
+          .order('date', { ascending: false });
+
+        const candidates = (started as Match[] | null) || [];
+        if (candidates.length > 0) {
+          // Jogos com ficha de jogo registada já tiveram votação: esses terminaram mesmo
+          const { data: withLineups } = await supabase
+            .from('match_lineups')
+            .select('match_id')
+            .in('match_id', candidates.map((c) => c.id));
+          const played = new Set((withLineups || []).map((l: any) => l.match_id));
+          const found = candidates.find((c) => !played.has(c.id));
+          if (found) startedMatch = { ...found, is_live: true };
+        }
+      }
+
       if (live) {
         setUpcomingMatch(live as Match);
+        setAllUpcomingMatches((upcomingList as Match[]) || []);
+      } else if (startedMatch) {
+        setUpcomingMatch(startedMatch);
         setAllUpcomingMatches((upcomingList as Match[]) || []);
       } else if (upcomingList && upcomingList.length > 0) {
         setUpcomingMatch(upcomingList[0] as Match);
@@ -351,7 +381,7 @@ export default function Home() {
         setAllUpcomingMatches([]);
       }
 
-      loadHistoryAndMatrix();
+      loadHistoryAndMatrix(startedMatch?.id);
     }
     loadData();
   }, []);
@@ -415,7 +445,7 @@ export default function Home() {
     setLoadingHistogram(false);
   }
 
-  async function loadHistoryAndMatrix() {
+  async function loadHistoryAndMatrix(excludeMatchId?: string) {
     const { data: matches } = await supabase
       .from('matches')
       .select('*')
@@ -426,6 +456,8 @@ export default function Home() {
 
     const validPastMatches = (matches as Match[] || []).filter((m) => {
       if (activeMatch && m.id === activeMatch.id) return false;
+      // O jogo que está a decorrer ainda não entra no histórico
+      if (excludeMatchId && m.id === excludeMatchId) return false;
       return true;
     });
 
@@ -795,7 +827,7 @@ export default function Home() {
           )}
           <button
             onClick={() => {
-              loadHistoryAndMatrix();
+              loadHistoryAndMatrix(upcomingMatch?.is_live ? upcomingMatch.id : undefined);
               setView('history');
             }}
             className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-bold rounded-lg transition-all ${
@@ -806,7 +838,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => {
-              loadHistoryAndMatrix();
+              loadHistoryAndMatrix(upcomingMatch?.is_live ? upcomingMatch.id : undefined);
               setView('matrix');
             }}
             className={`flex-1 py-1.5 md:py-2 text-[11px] md:text-xs font-bold rounded-lg transition-all ${
