@@ -38,6 +38,7 @@ interface SeasonStat {
   season_avg_score: number;
   matches_played: number;
   total_votes: number;
+  exact_avg?: number;
 }
 
 const POSITION_ORDER: Record<string, number> = {
@@ -179,7 +180,6 @@ export default function Home() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [allSquad, setAllSquad] = useState<Player[]>([]);
   const [stats, setStats] = useState<Stat[]>([]);
-  const [seasonStats, setSeasonStats] = useState<SeasonStat[]>([]);
   const [pastMatches, setPastMatches] = useState<Match[]>([]);
   const [communityMatrixScores, setCommunityMatrixScores] = useState<Record<string, Record<string, number>>>({});
   const [userMatrixScores, setUserMatrixScores] = useState<Record<string, Record<string, number>>>({});
@@ -515,12 +515,6 @@ export default function Home() {
         setUserMatrixScores(userMap);
       }
     }
-
-    const { data: season } = await supabase
-      .from('season_player_stats')
-      .select('*')
-      .order('season_avg_score', { ascending: false });
-    if (season) setSeasonStats(season as SeasonStat[]);
   }
 
   const handleScore = (id: string, score: number) => {
@@ -651,7 +645,41 @@ export default function Home() {
     ? (validCommunityScores.reduce((a, b) => a + b, 0) / validCommunityScores.length).toFixed(1)
     : '0.0';
 
-  const seasonFieldPlayers = seasonStats.filter((s) => s.position !== 'TREINADOR');
+  // MÉDIAS DA ÉPOCA: média das médias de cada jogo (cada jogo pesa o mesmo,
+  // independentemente de quantas pessoas votaram), igual ao "Progresso Época"
+  const disputedMatches = pastMatches.filter((m) =>
+    Object.values(communityMatrixScores).some((scores) => scores[m.id] > 0)
+  );
+  // Mínimo de jogos para entrar no ranking: 33% dos jogos disputados
+  const minSeasonGames = Math.max(1, Math.ceil(disputedMatches.length * 0.33));
+
+  const seasonStats: SeasonStat[] = allSquad
+    .map((p) => {
+      const scores = disputedMatches
+        .map((m) => communityMatrixScores[p.id]?.[m.id])
+        .filter((v): v is number => typeof v === 'number' && !isNaN(v) && v > 0);
+      const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      return {
+        player_id: p.id,
+        player_name: p.name,
+        position: p.position,
+        photo_url: p.photo_url,
+        season_avg_score: Number(avg.toFixed(1)),
+        exact_avg: avg,
+        matches_played: scores.length,
+        total_votes: 0,
+      };
+    })
+    .filter((s) => s.matches_played > 0)
+    .sort((a, b) => {
+      if (b.exact_avg !== a.exact_avg) return b.exact_avg - a.exact_avg;
+      if (b.matches_played !== a.matches_played) return b.matches_played - a.matches_played;
+      return a.player_name.localeCompare(b.player_name);
+    });
+
+  const seasonOutfield = seasonStats.filter((s) => s.position !== 'TREINADOR');
+  const seasonFieldPlayers = seasonOutfield.filter((s) => s.matches_played >= minSeasonGames);
+  const belowMinCount = seasonOutfield.length - seasonFieldPlayers.length;
   const top1 = seasonFieldPlayers[0] || null;
   const top2 = seasonFieldPlayers[1] || null;
   const top3 = seasonFieldPlayers[2] || null;
@@ -1155,7 +1183,7 @@ export default function Home() {
                   Registo Acumulado
                 </span>
                 <h3 className="text-sm md:text-lg font-bold text-white">Média Global do Plantel</h3>
-                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{pastMatches.length} partidas disputadas</p>
+                <p className="text-[11px] md:text-xs text-zinc-500 mt-0.5">{disputedMatches.length} partidas disputadas</p>
               </div>
               <div className="text-right">
                 <span className="text-3xl md:text-4xl font-black text-red-500">{globalAverage}</span>
@@ -1168,7 +1196,9 @@ export default function Home() {
                 <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-zinc-400">
                   Top da Temporada (Jogadores)
                 </h3>
-                <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Médias acumuladas</span>
+                <span className="text-[10px] md:text-xs text-zinc-500 font-medium text-right">
+                  Média por jogo • mín. {minSeasonGames} {minSeasonGames === 1 ? 'jogo' : 'jogos'}
+                </span>
               </div>
 
               {seasonFieldPlayers.length === 0 ? (
@@ -1225,7 +1255,12 @@ export default function Home() {
                             <div className="w-7 h-7 rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700/60 flex-shrink-0">
                               <PlayerAvatar src={s.photo_url} name={s.player_name} isCoach={s.position === 'TREINADOR'} />
                             </div>
-                            <p className="font-bold text-xs text-white truncate">{s.player_name}</p>
+                            <div className="min-w-0">
+                              <p className="font-bold text-xs text-white truncate">{s.player_name}</p>
+                              <span className="text-[9px] text-zinc-500">
+                                {s.matches_played} {s.matches_played === 1 ? 'jogo' : 'jogos'}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-right">
                             <span className="text-xs md:text-sm font-black text-red-500">{s.season_avg_score}</span>
@@ -1234,6 +1269,13 @@ export default function Home() {
                         </div>
                       ))}
                     </div>
+                  )}
+
+                  {belowMinCount > 0 && (
+                    <p className="text-[10px] md:text-xs text-zinc-500 text-center mt-3">
+                      {belowMinCount} {belowMinCount === 1 ? 'jogador ainda não tem' : 'jogadores ainda não têm'} jogos suficientes
+                      para entrar no ranking (mínimo {minSeasonGames}, 33% dos jogos).
+                    </p>
                   )}
                 </>
               )}
